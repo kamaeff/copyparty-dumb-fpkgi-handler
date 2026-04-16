@@ -1,4 +1,4 @@
-# copyparty-dumb-fpgki-handler
+# copyparty-dumb-fpkgi-handler
 Copyparty on404 handler enabling your copyparty instance to work as an FPKGi server for playstation homebrew packages.
 
 It's simple and dumb. It does not read package SFO metadata. It does not validate package files. It does not cache anything.  
