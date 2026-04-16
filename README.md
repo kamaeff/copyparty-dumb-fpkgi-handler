@@ -54,7 +54,7 @@ Now it's time to update our FPKGi `CONTENT_URLS` setting on PS4 system:
       "PS1": null, "PS2": null, "PSP": null, "PS5": null, "games": null, "emulators": null,
       "apps": null, "updates": null, "DLC": null, "demos": null, "themes": null,
 
-      "homebrew": "http://yourserver.com/fpkgi/__FPKGi.json",
+      "homebrew": "http://yourserver.com/homebrew/__FPKGi.json",
     }
 ```
 
@@ -65,7 +65,7 @@ Then when FPKGi app is started it will show all `.pkg` files from `/home/AzureDi
 Note that with provided configuration such packages will appear with `homebrew` content type in FPKGi app. If you want you can set up different copyparty mounts for different content types and manually move pkg files around. 
 
 If you need to serve from password-protected mount, there are two options:
-- use basic auth: `"homebrew": "http://AzureDiamond:hunter2@yourserver.com/fpkgi/__FPKGi.json",` (Note that `no-bauth` flag should be unset in `copyparty.conf`)
+- use basic auth: `"homebrew": "http://AzureDiamond:hunter2@yourserver.com/homebrew/__FPKGi.json",` (Note that `no-bauth` flag should be unset in `copyparty.conf`)
 - set up [ipauth](https://github.com/9001/copyparty/blob/a997455b5a3d937f53ad40f431534a0e3865e9f7/docs/chungus.conf#L445) for requests coming from your PS4
 
 
