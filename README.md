@@ -73,6 +73,7 @@ If you need to serve from password-protected mount, there are two options:
 - file names used instead of correct Title Names
 - only `CUSA` TitleIds parsed from file names. If file name doesn't contain `CUSA00000` id then it defaults to `UNKNOWN`
 - no package version, required firmware, release date, cover image provided
+- currently other copyparty mounts inside of `/homebrew` mount are not taken in account. If you add `/homebrew/secret-downloads` mount with no read/get access to mask and hide an existing folder `/home/AzureDiamond/Downloads/secret-downloads` the script will still be able to add the files from `secret-downloads` to json. If you add multiple mount points to serve from multiple folders (e.g. `/homebrew/downloads`, `/homebrew/hb-pkg-library`), files from these folders won't show up in the json. 
 
 ### Acknowledgements
 - [copyparty](https://copyparty.eu) – file server I love; created by @9001
