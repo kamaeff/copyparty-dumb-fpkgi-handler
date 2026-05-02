@@ -3,7 +3,7 @@ Copyparty on404 handler enabling your copyparty instance to work as an FPKGi ser
 
 ### Changelog
 
-- [2026-05-03]():
+- [2026-05-03](https://github.com/kamaeff/copyparty-dumb-fpkgi-handler/tree/652c295d46c416710bc240bf7664bacb74e19f74):
     - Now it servers PKG's metadata: Title IDs, Title Names, Regions, Categories, Versions, Required FW versions and Cover Images
     - Now it also respects copyparty's VFS and permissions.
     - Added multiple endpoints to serve packages grouped by category (Games, DLC, Updates, PS2 Games etc.)
