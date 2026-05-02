@@ -27,6 +27,8 @@ Later on I've added metadata support, but it's still a single dumb Python script
 
 ### Example
 
+[Here](https://github.com/kamaeff/home-server/tree/edd198b06d2546a8cff2109c656d587f769438d1/copyparty) you can see a docker-compose example from my actual home server. 
+
 ###### copyparty config
 
 Let's see an example with this copyparty config:
