@@ -67,7 +67,7 @@ def get_all_packages(cli, vn):
     basic_auth=''
     if cli.uname != '*' or cli.pw:
         basic_auth = f'{cli.uname}:{cli.pw}@'
-    base_url = f"{protocol}://{basic_auth}{cli.host}/"
+    base_url = f"{protocol}://{basic_auth}{cli.host}{cli.args.SRS}"
 
     packages = {}
     for walk_result in vn.walk('', '', [], cli.uname, REQUIRED_PERMISSIONS.permissions, 0, False, False, True):
