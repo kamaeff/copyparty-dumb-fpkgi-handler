@@ -1,0 +1,3 @@
+[submodule "src/payload/sdk"]
+	path = src/payload/sdk
+	url = ../better-ps4-payload-sdk
