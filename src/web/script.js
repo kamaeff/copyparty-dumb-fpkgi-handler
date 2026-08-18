@@ -29,9 +29,8 @@ addEventListener("DOMContentLoaded", async function() {
     mItem.onclick = function(e) {
         ev(e);
         console.log(this.fid);
-        const message = 
         modal.confirm(
-            `<h4>install package</h4>\n${deUri(nameHref(hrefById(this.fid)))}`,
+            `<h4>install package</h4>\n${nameById(this.fid)}`,
             () => { fetchOne(this.fid); },
             null
         );
@@ -61,7 +60,7 @@ addEventListener("DOMContentLoaded", async function() {
         const link = thegrid.en
             ? e.target.closest('#ggrid > a')
             : e.target.closest('#files tbody tr')?.children[1].querySelector('a[id]');
-        if (isInstallable(nameHref(link?.getAttribute('href')))) {
+        if (isInstallable(stripQuery(link?.getAttribute('href')))) {
             mItem.fid = thegrid.en ? link.getAttribute('ref') : link.id;
             mItem.classList.remove('hide');
         } else {
@@ -135,16 +134,12 @@ addEventListener("DOMContentLoaded", async function() {
     ////// sending requests to the server {
     function doFetch(fid) {
         updateLead(fid, "...");
-        const href = nameHref(hrefById(fid));
-        const name = deUri(href);
-        
-        return fetch('.', {
-            method: 'POST',
-            body: 'msg=fpkg-install:' + href,
+        const href = uriPathById(fid)
+        const path = '/__fpkgtb/sender' + (href.startsWith('/') ? href : `/${href}`);
+        const name = nameById(fid);
+        return fetch(path, {
+            method: 'GET',
             signal: AbortSignal.timeout(3000),
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
-            },
         }).then(
             async (res) => {
                 if (res.status < 200 || res.status >= 400) {
@@ -203,6 +198,7 @@ addEventListener("DOMContentLoaded", async function() {
             failed: [],
         };
         const results = fids.map(fid => doFetch(fid).then(res => {
+            res.fid = fid;
             if (res.success) {
                 ps.sent.push(res);
             } else {
@@ -222,16 +218,28 @@ addEventListener("DOMContentLoaded", async function() {
                 messages.push(`😐 <strong>${p.name}</strong>`);
                 messages.push(`<strong>ERROR:</strong> ${p.message}`);
             };
+            if (ps.failed.length) {
+                messages.push(`<button id="fpkg-toast-retry">retry ${ps.failed.length}</button>`)
+            }
             if (!success) {
                 messages.push('\n');
             }
             for (const p of ps.sent) {
                 messages.push(`✅ <strong>${p.name}</strong> ${p.message}`);
             }
+
             const message = messages.join('\n');
             const t = success ? toast.ok : toast.err;
             const timeout = success ? 10 : null;
             t(timeout, message);
+            console.debug({ps});
+            if (ps.failed.length) {
+                const retry_b = ebi('fpkg-toast-retry');
+                console.debug({retry_b});
+                if (retry_b) {
+                    retry_b.onclick = () => fetchMany(ps.failed.map(p => p.fid));
+                }
+            }
         })
     }
     ////// }
@@ -239,11 +247,11 @@ addEventListener("DOMContentLoaded", async function() {
 
     ////// util {
     function isInstallable(name) {
-        return EXTS.has(name?.slice(-4)?.toLowerCase())
+        return EXTS.has(name?.slice(-4)?.toLowerCase());
     }
     function getPkgFiles(selected) {
         const res = [];
-        const files = selected ? msel.getsel() : msel.getall()
+        const files = selected ? msel.getsel() : msel.getall();
         for (const f of files) {
             if (!f.isd && isInstallable(f.vp)) {
                 const href = f.vp.slice(f.vp.lastIndexOf('/') + 1);
@@ -254,8 +262,9 @@ addEventListener("DOMContentLoaded", async function() {
         return res;
     }
 
-    function hrefById(fid) {
-        return ebi(fid).getAttribute('href')
+    function stripQuery(uri) {
+        if (!uri) return uri;
+        return uri.split('?', 1)[0];
     }
 
     function deUri(href) {
@@ -266,8 +275,14 @@ addEventListener("DOMContentLoaded", async function() {
         }
     }
 
-    function nameHref(fullHref) {
-        return fullHref?.split('?')[0].split('/').at(-1);
+    function uriPathById(fid) {
+        return stripQuery(ebi(fid).getAttribute('href'));
+    }
+
+    function nameById(fid) {
+        const path = uriPathById(fid);
+        const start = path.lastIndexOf('/') + 1;
+        return deUri(path.slice(start));
     }
     ////// }
 })

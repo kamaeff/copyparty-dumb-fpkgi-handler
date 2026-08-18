@@ -97,17 +97,19 @@ def handle_send(cli, vn, rem):
         log('henlo from sendr')
 
         import random
+        import time
         time.sleep(0.2 + random.random())
         if random.random() > 0.9:
             raise Exception('random error')
-        cli.reply(bytes('sent successfuly', 'utf-8'), 200, "text/plain")
+        cli.reply(bytes('sent', 'utf-8'), 200, "text/plain")
         return "true"
     except Exception as e:
         import traceback
         log(
             "FPKG extractor failed with an exception:\n" + traceback.format_exc()
         )
-        cli.reply(bytes('failed successfully', 'utf-8'), 418, "text/plain")
+        msg = f'failed successfully\n{e!r}'
+        cli.reply(bytes(msg, 'utf-8'), 400, "text/plain")
         return "false" # I don't remember what am I supposed to return
 
 def handle_thumb_extract(abspath, **kwargs):
