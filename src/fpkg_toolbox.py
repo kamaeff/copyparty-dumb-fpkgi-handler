@@ -1,5 +1,5 @@
 # on404 handler
-# sends a custom response instead of the usual 404
+# sends custom response instead of the default 404 page
 
 import datetime as dt
 from enum import Enum
@@ -10,6 +10,22 @@ from pathlib import Path
 from urllib.parse import quote
 import re
 import struct
+
+
+
+###### Build stuff ######
+
+PAYLOAD_TEMPLATE = None
+assert PAYLOAD_TEMPLATE is not None
+
+SCRIPT_JS = None
+assert SCRIPT_JS is not None
+
+STYLE_CSS = None
+assert STYLE_CSS is not None
+
+###### /Build stuff ######
+
 
 
 ###### Main logic ######

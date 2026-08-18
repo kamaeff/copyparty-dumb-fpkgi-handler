@@ -6,6 +6,14 @@ Copyparty on404 handler enabling your copyparty instance to work as an FPKGi ser
 Starting from 2026-08-18 the repo is under maintenance. Big update is coming, but files in the master branch may be broken during that stage.
 If you need a working version, just grab it from the changelog below.
 
+#### Build requirements
+- x86_64 machine
+- gcc
+- yasm
+- python, optional:rjsmin
+
+e.g.: alpine; apk add: make gcc yasm file; py3-rjsmin; openrc openssh;
+
 ### Changelog
 
 - [2026-05-03](https://github.com/kamaeff/copyparty-dumb-fpkgi-handler/tree/652c295d46c416710bc240bf7664bacb74e19f74):

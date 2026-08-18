@@ -1,0 +1,39 @@
+import base64
+import re
+
+try:
+    from rjsmin import jsmin
+except ImportError:
+    # not too brave to do it myself lol
+    jsmin = lambda s: s
+
+# at some point it will hurt
+# but hopefully I either reject minifiers or switch to something by that moment
+def cssmin(s):
+    return re.sub(r'(?:\s|/\*.*?\*/)+', ' ', s).replace(': ', ':').replace('; ', ';').strip()
+
+
+with open('src/fpkg_toolbox.py', 'rt') as py_f:
+    py_s = py_f.read()
+
+with open('build/payload.bin', 'rb') as payload_f:
+    payload_b = payload_f.read()
+
+with open('src/web/style.css', 'rt') as css_f:
+    css_s = css_f.read()
+
+with open('src/web/script.js', 'rt') as js_f:
+    js_s = js_f.read()
+
+py_s = py_s.replace('\nPAYLOAD_TEMPLATE = None', f'''
+import base64
+PAYLOAD_TEMPLATE = base64.b64decode({base64.b64encode(payload_b)!r})''', count=1)
+
+py_s = py_s.replace('\nSTYLE_CSS = None', '\nSTYLE_CSS = ' + repr(cssmin(css_s)), count=1)
+
+py_s = py_s.replace('\nSCRIPT_JS = None', '\nSCRIPT_JS = ' + repr(jsmin(js_s)), count=1)
+
+with open('build/fpkg_toolbox.py', 'wt') as out:
+    out.write(py_s)
+
+print('built build/fpkg_toolbox.py')

@@ -1,0 +1,11 @@
+/* css trick to show 'install' lead button immediately before scripts are even loaded */
+#files tbody tr:has(td:nth-child(2) a[href$=".pkg"],a[href$=".PKG"],a[href$=".bin"],a[href$=".BIN"],a[href$=".elf"],a[href$=".ELF"]) td:first-child a:not(.fpkg-handled) {
+    font-size: 0px;
+}
+
+#files tbody tr:has(td:nth-child(2) a[href$=".pkg"],a[href$=".PKG"],a[href$=".bin"],a[href$=".BIN"],a[href$=".elf"],a[href$=".ELF"]) td:first-child a:not(.fpkg-handled)::before {
+    content: "install";
+    font-size: initial;
+    color: #2766c4f8;
+    display: inline;
+}
