@@ -16,6 +16,13 @@ import struct
 ###### Build stuff ######
 
 PAYLOAD_TEMPLATE = None
+PAYLOAD_CONTENT_ID_START = None
+PAYLOAD_CONTENT_URL_START = None
+PAYLOAD_CONTENT_NAME_START = None
+PAYLOAD_ICON_URL_START = None
+PAYLOAD_PACKAGE_TYPE_START = None
+PAYLOAD_PACKAGE_SIZE_START = None
+
 assert PAYLOAD_TEMPLATE is not None
 
 SCRIPT_JS = None
@@ -93,14 +100,14 @@ def handle_send(cli, vn, rem):
         time.sleep(0.2 + random.random())
         if random.random() > 0.9:
             raise Exception('random error')
-        cli.reply(bytes('sent_successfuly', 'utf-8'), 200, "text/plain")
+        cli.reply(bytes('sent successfuly', 'utf-8'), 200, "text/plain")
         return "true"
     except Exception as e:
         import traceback
         log(
             "FPKG extractor failed with an exception:\n" + traceback.format_exc()
         )
-        cli.reply(bytes('failed successfully', 'utf-8'), 428, "text/plain")
+        cli.reply(bytes('failed successfully', 'utf-8'), 418, "text/plain")
         return "false" # I don't remember what am I supposed to return
 
 def handle_thumb_extract(abspath, **kwargs):

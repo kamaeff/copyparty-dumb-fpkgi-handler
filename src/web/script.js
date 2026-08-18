@@ -111,7 +111,7 @@ addEventListener("DOMContentLoaded", async function() {
             link.style.color = '#C42727f8';
         }
         else if (toState == 'sent') {
-            link.style.color = 'var(--f-gray)'
+            link.style.color = 'var(--f-gray)';
         }
         children.forEach(l => l.onclick = handleLeadClick);
         cell.replaceChildren(...children);
@@ -126,7 +126,7 @@ addEventListener("DOMContentLoaded", async function() {
         } else if (text == "sure") {
             fetchOne(fid);
         } else if (text == "nope" || text == "failed") {
-            updateLead(fid, "install")
+            updateLead(fid, "install");
         }
     }
     ////// }
