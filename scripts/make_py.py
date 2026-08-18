@@ -29,9 +29,9 @@ py_s = py_s.replace('\nPAYLOAD_TEMPLATE = None', f'''
 import base64
 PAYLOAD_TEMPLATE = base64.b64decode({base64.b64encode(payload_b)!r})''', count=1)
 
-py_s = py_s.replace('\nSTYLE_CSS = None', '\nSTYLE_CSS = ' + repr(cssmin(css_s)), count=1)
+py_s = py_s.replace('\nSTYLE_CSS = None', '\nSTYLE_CSS = ' + repr(bytes(cssmin(css_s), 'utf8')), count=1)
 
-py_s = py_s.replace('\nSCRIPT_JS = None', '\nSCRIPT_JS = ' + repr(jsmin(js_s)), count=1)
+py_s = py_s.replace('\nSCRIPT_JS = None', '\nSCRIPT_JS = ' + repr(bytes(jsmin(js_s), 'utf8')), count=1)
 
 with open('build/fpkg_toolbox.py', 'wt') as out:
     out.write(py_s)

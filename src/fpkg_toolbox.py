@@ -27,17 +27,49 @@ assert STYLE_CSS is not None
 ###### /Build stuff ######
 
 
+###### Dispatching ######
 
-###### Main logic ######
-
-COVER_VFS_PREFIX = '__fpkg_cover/'
+COMMON_VFS_PREFIX = '__fpkgtb/'
+SCRIPT_VFS_PATH = COMMON_VFS_PREFIX + 'script.js'
+STYLE_VFS_PATH = COMMON_VFS_PREFIX + 'style.css'
+COVER_VFS_PREFIX = COMMON_VFS_PREFIX + 'cover/'
+SENDER_VFS_PREFIX = COMMON_VFS_PREFIX + 'sender/'
 COVER_POSTFIX = '.png'
-JSON_VFS_PATH_PATTERN = re.compile(r'__FPKGi_?(?P<category>\w*).json$')
+JSON_VFS_PATH_PATTERN = re.compile(rf'^{COMMON_VFS_PREFIX}(?:all|(?P<category>DLC|games|apps|PS2|updates|homebrew)).json$')
 
 
-def main(cli, vn, rem):
+def main(*args, **kwargs):
+    # called as thumb extractor
+    if len(args) == 1 and isinstance(args[0], str) and kwargs:
+        return handle_thumb_extract(*args, **kwargs)
+
+    if not (
+        len(args) == 3
+        and args[0].__class__.__name__ == 'HttpCli'
+        and args[1].__class__.__name__ == 'VFS'
+        and isinstance(args[2], str)
+    ):
+        raise Exception(f'Unknown args: {args=!r}, {kwargs=!r}')
+
+    # called as on404 handler
+    cli, vn, rem = args
+    if not rem.startswith(COMMON_VFS_PREFIX):
+        return str(cli.tx_404())
+
+    if rem == SCRIPT_VFS_PATH:
+        cli.reply(SCRIPT_JS, 200, "text/javascript")
+        return "true"
+
+    if rem == STYLE_VFS_PATH:
+        cli.reply(STYLE_CSS, 200, "text/css")
+        return "true"
+
     if rem.startswith(COVER_VFS_PREFIX):
         return handle_cover(cli, vn, rem[len(COVER_VFS_PREFIX):-len(COVER_POSTFIX)])
+
+    if rem.startswith(SENDER_VFS_PREFIX):
+        return handle_send(cli, vn, rem[len(SENDER_VFS_PREFIX):])
+
 
     match = JSON_VFS_PATH_PATTERN.match(rem)
     if match is None:
@@ -45,6 +77,45 @@ def main(cli, vn, rem):
 
     return handle_json(cli, vn, match.group('category') or None)
 
+###### /Dispatching ######
+
+
+
+###### Main logic ######
+
+def handle_send(cli, vn, rem):
+    # check send.py on the desktop
+    try:
+        log = cli.log
+        log('henlo from sendr')
+
+        import random
+        time.sleep(0.2 + random.random())
+        if random.random() > 0.9:
+            raise Exception('random error')
+        cli.reply(bytes('sent_successfuly', 'utf-8'), 200, "text/plain")
+        return "true"
+    except Exception as e:
+        import traceback
+        log(
+            "FPKG extractor failed with an exception:\n" + traceback.format_exc()
+        )
+        cli.reply(bytes('failed successfully', 'utf-8'), 428, "text/plain")
+        return "false" # I don't remember what am I supposed to return
+
+def handle_thumb_extract(abspath, **kwargs):
+    f = None
+    try:
+        f = PkgFile(abspath)
+        res = f.get_cover_location()
+        if res is None:
+            return None
+        offset, length = res
+        return 'png', f, offset, 0, length
+    except Exception as e:
+        if f:
+            f.close()
+        raise e
 
 def handle_cover(cli, vn, rem):
     vfs_path = Path(vn.vpath, rem)
@@ -348,12 +419,15 @@ class PkgFile(object):
             self.ENTRY_ID_PIC0_PNG in self.entries_locations
         )
 
-    def extract_cover_image(self):
-        location = (
+    def get_cover_location(self):
+        return (
             self.entries_locations.get(self.ENTRY_ID_ICON0_PNG)
             or
             self.entries_locations.get(self.ENTRY_ID_PIC0_PNG)
         )
+
+    def extract_cover_image(self):
+        location = self.get_cover_location()
         if location is None:
             return None
         return self.seek(location[0]).read(location[1])
