@@ -13,9 +13,18 @@ import struct
 
 
 
+PAYLOAD_CONTENT_ID_SIZE = 0x30
+PAYLOAD_CONTENT_URL_SIZE = 0x800
+PAYLOAD_CONTENT_NAME_SIZE = 0x259
+PAYLOAD_ICON_URL_SIZE = 0x800
+PAYLOAD_PACKAGE_TYPE_SIZE = 0x15
+PAYLOAD_PACKAGE_SIZE_SIZE = 0x8
+
+
 ###### Build stuff ######
 
 PAYLOAD_TEMPLATE = None
+
 PAYLOAD_CONTENT_ID_START = None
 PAYLOAD_CONTENT_URL_START = None
 PAYLOAD_CONTENT_NAME_START = None
@@ -90,27 +99,24 @@ def main(*args, **kwargs):
 
 ###### Main logic ######
 
+def can_send(uname):
+    return uname != '*'
+
 def handle_send(cli, vn, rem):
     # check send.py on the desktop
-    try:
-        log = cli.log
-        log('henlo from sendr')
+    log = cli.log
+    log('henlo from sendr')
+    log(str(rem))
+    log(f'{cli.uparam.get('k')=!r}')
 
-        import random
-        import time
-        time.sleep(0.2 + random.random())
-        if random.random() > 0.9:
-            raise Exception('random error')
-        cli.reply(bytes('sent', 'utf-8'), 200, "text/plain")
-        return "true"
-    except Exception as e:
-        import traceback
-        log(
-            "FPKG extractor failed with an exception:\n" + traceback.format_exc()
-        )
-        msg = f'failed successfully\n{e!r}'
-        cli.reply(bytes(msg, 'utf-8'), 400, "text/plain")
-        return "false" # I don't remember what am I supposed to return
+    import random
+    import time
+    time.sleep(0.2 + random.random())
+    if random.random() > 0.7:
+        cli.reply(b'failed successfully', 400, "text/plain")
+        return "false"
+    cli.reply(b'sent', 200, "text/plain")
+    return "true"
 
 def handle_thumb_extract(abspath, **kwargs):
     f = None

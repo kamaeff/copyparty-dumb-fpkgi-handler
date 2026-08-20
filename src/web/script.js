@@ -1,22 +1,26 @@
 addEventListener("DOMContentLoaded", async function() {
-    ////// consts {
+    ////// consts or smth {
     const EXTS = new Set(['.pkg', '.elf', '.bin']);
     ////// }
 
 
     ////// initial setup: file list {
     // set 'install' buttons on initial page load
-    for (const f of getPkgFiles()) {
-        updateLead(f.id, 'install');
+    let PKGFILES = getPkgFiles();
+    for (const f of PKGFILES) {
+        updateLead(f, 'install');
     }
     // hook into gentab to set up 'install' buttons during navigation
     const origgentab = treectl.gentab;
     treectl.gentab = function(top, res) {
-        const resp = origgentab(top, res);
-        for (const f of getPkgFiles()) {
-            updateLead(f.id, 'install');
+        const ret = origgentab(top, res);
+        PKGFILES = getPkgFiles();
+        console.log('gentab called');
+        console.debug(PKGFILES);
+        for (const f of PKGFILES) {
+            updateLead(f, 'install');
         }
-        return resp;
+        return ret;
     }
     ////// }
 
@@ -28,10 +32,10 @@ addEventListener("DOMContentLoaded", async function() {
     mItem.setAttribute('href', '#');
     mItem.onclick = function(e) {
         ev(e);
-        console.log(this.fid);
+        console.log(this.file);
         modal.confirm(
-            `<h4>install package</h4>\n${nameById(this.fid)}`,
-            () => { fetchOne(this.fid); },
+            `<h4>install package</h4>\n${this.file.name}`,
+            () => { fetchMany([this.file]); },
             null
         );
     }
@@ -39,17 +43,24 @@ addEventListener("DOMContentLoaded", async function() {
     mItemMany.id = "rfpkgi-many";
     mItemMany.textContent = 'install selected';
     mItemMany.setAttribute('href', '#');
-    mItemMany.onclick = function(e) {
+
+    let mItemAll = document.createElement('a');
+    mItemAll.id = "rfpkgi-all";
+    mItemAll.textContent = 'install all';
+    mItemAll.setAttribute('href', '#');
+
+    mItemMany.onclick = mItemAll.onclick = function(e) {
         ev(e);
-        console.log(this.fselected);
-        const message = `<h4>install (${this.fselected.length}) packages?</h4>\n`
-                      + this.fselected.map(s => deUri(s.href)).join('\n');
+        const message = `<h4>install (${this.files.length}) packages?</h4>\n`
+                      + this.files.map(s => s.name).join('\n');
         modal.confirm(
             message,
-            () => fetchMany(this.fselected.map(f => f.id)),
+            () => fetchMany(this.files),
             null
         );
     }
+
+    ebi('rcm').prepend(mItemAll);
     ebi('rcm').prepend(mItemMany);
     ebi('rcm').prepend(mItem);
 
@@ -57,33 +68,52 @@ addEventListener("DOMContentLoaded", async function() {
     ebi('wrap').oncontextmenu = function(e) {
         const mItem = ebi('rfpkgi');
         const mItemMany = ebi('rfpkgi-many');
-        const link = thegrid.en
-            ? e.target.closest('#ggrid > a')
-            : e.target.closest('#files tbody tr')?.children[1].querySelector('a[id]');
-        if (isInstallable(stripQuery(link?.getAttribute('href')))) {
-            mItem.fid = thegrid.en ? link.getAttribute('ref') : link.id;
+        const mItemAll = ebi('rfpkgi-all');
+
+        if (!PKGFILES.length) {
+            for (const item of [mItem, mItemMany, mItemAll]){
+                item.classList.add('hide');
+            }
+            return origrcm(e);
+        }
+        mItemAll.files = PKGFILES;
+        mItemAll.textContent = `install all (${PKGFILES.length})`;
+        mItemAll.classList.remove('hide');
+
+        const fid = thegrid.en
+            ? e.target.closest('#ggrid > a')?.getAttribute('ref')
+            : e.target.closest('#files tbody tr')?.children[1].querySelector('a[id]').id;
+        file = fid ? PKGFILES.find(f => f.id == fid) : null;
+        mItem.file = file;
+        if (file) {
             mItem.classList.remove('hide');
         } else {
             mItem.classList.add('hide');
-            mItem.fid = null;
         }
 
-        const selected = getPkgFiles(true);
-        mItemMany.fselected = selected;
-        mItemMany.textContent = `install selected (${selected.length})`
+        const selectedFids = msel.getsel().map(f => f.id);
+        const selected = PKGFILES.filter(f => selectedFids.includes(f.id));
+        mItemMany.files = selected;
+        mItemMany.textContent = `install selected (${selected.length})`;
         if (selected.length > 1) {
             mItemMany.classList.remove('hide');
         } else {
             mItemMany.classList.add('hide');
         }
+
         return origrcm(e);
     }
     ////// }
 
 
     ////// file list operations {
-    function updateLead(fid, toState) {
-        const cell = ebi(fid).closest('tr').firstElementChild;
+    function updateLead(file, toState) {
+        const fid = file.id;
+        const cell = ebi(fid)?.closest('tr').firstElementChild;
+        if (!cell) {  // switched to another folder
+            return;
+        }
+
         const link = document.createElement('a');
         link.setAttribute('href', '#');
         link.setAttribute('ref', fid);
@@ -120,24 +150,27 @@ addEventListener("DOMContentLoaded", async function() {
         ev(e);
         const text = e.target.textContent;
         const fid = e.target.getAttribute('ref');
+        const file = PKGFILES.find(f => f.id == fid);
         if (text == "install") {
-            updateLead(fid, "surenope");
+            updateLead(file, "surenope");
         } else if (text == "sure") {
-            fetchOne(fid);
+            fetchMany([file]);
         } else if (text == "nope" || text == "failed") {
-            updateLead(fid, "install");
+            updateLead(file, "install");
         }
     }
     ////// }
 
 
     ////// sending requests to the server {
-    function doFetch(fid) {
-        updateLead(fid, "...");
-        const href = uriPathById(fid)
-        const path = '/__fpkgtb/sender' + (href.startsWith('/') ? href : `/${href}`);
-        const name = nameById(fid);
-        return fetch(path, {
+    function doFetch(file) {
+        updateLead(file, "...");
+        let url = SR + '/__fpkgtb/sender' + file.href;
+        if (file.k) {
+            url += `?k=${file.k}`
+        }
+        const name = file.name;
+        return fetch(url, {
             method: 'GET',
             signal: AbortSignal.timeout(3000),
         }).then(
@@ -174,31 +207,30 @@ addEventListener("DOMContentLoaded", async function() {
             }
         ).then(res => {
             const state = res.success ? 'sent' : 'failed';
-            updateLead(fid, state);
-            res.fid = fid;
-            res.name = name;
+            updateLead(file, state);
+            res.file = file;
             return res;
         });
     }
 
-    function fetchOne(fid) {
-        return doFetch(fid).then(res => {
-            console.log(res);
-            if (res.success) {
-                toast.ok(5, `<b>FPKG install success</b>\n${res.name}\n${res.message}`);
-            } else {
-                toast.err(null, `<h4>FPKG install failed</h4>\n${res.name}\n${res.message}`);
-            }
-        });
-    }
+    // function fetchOne(file) {
+    //     return doFetch(file).then(res => {
+    //         console.log(res);
+    //         if (res.success) {
+    //             toast.ok(5, `<b>FPKG install success</b>\n${res.file.name}\n${res.message}`);
+    //         } else {
+    //             toast.err(null, `<h4>FPKG install failed</h4>\n${res.file.name}\n${res.message}`);
+    //         }
+    //     });
+    // }
 
-    function fetchMany(fids) {
+    function fetchMany(files) {
         const ps = {
             sent: [],
             failed: [],
         };
-        const results = fids.map(fid => doFetch(fid).then(res => {
-            res.fid = fid;
+        const results = files.map(file => doFetch(file).then(res => {
+            res.file = file;
             if (res.success) {
                 ps.sent.push(res);
             } else {
@@ -211,21 +243,21 @@ addEventListener("DOMContentLoaded", async function() {
             const success = (ps.sent.length && !ps.failed.length);
 
             messages.push(success
-                ? `<h4>FPKG install: successfully sent ${ps.sent.length}/${fids.length} packages</h4>`
-                : `<h4>FPKG install: failed to send ${ps.failed.length}/${fids.length} packages</h4>`
+                ? `<h4>FPKG install: successfully sent ${ps.sent.length}/${files.length} packages</h4>`
+                : `<h4>FPKG install: failed to send ${ps.failed.length}/${files.length} packages</h4>`
             );
             for (const p of ps.failed) {
-                messages.push(`😐 <strong>${p.name}</strong>`);
+                messages.push(`😐 <strong>${p.file.name}</strong>`);
                 messages.push(`<strong>ERROR:</strong> ${p.message}`);
             };
             if (ps.failed.length) {
-                messages.push(`<button id="fpkg-toast-retry">retry ${ps.failed.length}</button>`)
+                messages.push(`<a class="btn" id="fpkg-toast-retry">↻ retry ${ps.failed.length}</a>`)
             }
             if (!success) {
                 messages.push('\n');
             }
             for (const p of ps.sent) {
-                messages.push(`✅ <strong>${p.name}</strong> ${p.message}`);
+                messages.push(`✅ <strong>${p.file.name}</strong> ${p.message}`);
             }
 
             const message = messages.join('\n');
@@ -237,7 +269,7 @@ addEventListener("DOMContentLoaded", async function() {
                 const retry_b = ebi('fpkg-toast-retry');
                 console.debug({retry_b});
                 if (retry_b) {
-                    retry_b.onclick = () => fetchMany(ps.failed.map(p => p.fid));
+                    retry_b.onclick = () => fetchMany(ps.failed.map(p => p.file));
                 }
             }
         })
@@ -246,25 +278,32 @@ addEventListener("DOMContentLoaded", async function() {
 
 
     ////// util {
-    function isInstallable(name) {
-        return EXTS.has(name?.slice(-4)?.toLowerCase());
-    }
     function getPkgFiles(selected) {
-        const res = [];
-        const files = selected ? msel.getsel() : msel.getall();
-        for (const f of files) {
-            if (!f.isd && isInstallable(f.vp)) {
-                const href = f.vp.slice(f.vp.lastIndexOf('/') + 1);
-                console.log(href);
-                res.push({id: f.id, href});
-            }
+        const ret = [];
+        
+        const evpath = get_evpath().slice(SR.length);
+        if (have_shr && evpath.startsWith(have_shr)) {
+            return ret;
         }
-        return res;
-    }
+        const lsc = treectl.lsc.files.filter(f => EXTS.has('.' + f.ext.toLowerCase()));
+        if (!lsc.length) {
+            return ret;
+        }
 
-    function stripQuery(uri) {
-        if (!uri) return uri;
-        return uri.split('?', 1)[0];
+        const lsmsel = msel.getall().filter(f => !f.isd && EXTS.has(f.vp.slice(-4).toLowerCase()));
+        
+        for (const f of lsc) {
+            const [nameUri, query] = f.href.split('?');
+            const href = evpath + nameUri;
+            const mselfile = lsmsel.find(m => m.vp.slice(SR.length) == href);
+            ret.push({
+                id: mselfile.id,
+                name: deUri(nameUri),
+                href,
+                k: /(?:^|&)k=(?<k>[^&]+)/.exec(query)?.groups?.k
+            })
+        }
+        return ret
     }
 
     function deUri(href) {
@@ -275,14 +314,5 @@ addEventListener("DOMContentLoaded", async function() {
         }
     }
 
-    function uriPathById(fid) {
-        return stripQuery(ebi(fid).getAttribute('href'));
-    }
-
-    function nameById(fid) {
-        const path = uriPathById(fid);
-        const start = path.lastIndexOf('/') + 1;
-        return deUri(path.slice(start));
-    }
     ////// }
 })
