@@ -30,11 +30,11 @@ import base64
 PAYLOAD_TEMPLATE = base64.b64decode({base64.b64encode(payload_b)!r})''', count=1)
 
 prefixes = {
-    "CONTENT_ID": b"\x11\x11\x11\x11\x11\x11\x11\x11PACKAGE_CONTENT_ID",
-    "CONTENT_URL": b"\x22\x22\x22\x22\x22\x22\x22\x22PACKAGE_CONTENT_URL",
-    "CONTENT_NAME": b"\x33\x33\x33\x33\x33\x33\x33\x33PACKAGE_CONTENT_NAME",
-    "ICON_URL": b"\x44\x44\x44\x44\x44\x44\x44\x44PACKAGE_ICON_URL",
-    "PACKAGE_TYPE": b"\x55\x55\x55\x55\x55\x55\x55\x55PACKAGE_TYPE",
+    "CONTENT_ID": b"{{ PACKAGE_CONTENT_ID }}",
+    "CONTENT_URL": b"{{ PACKAGE_CONTENT_URL }}",
+    "CONTENT_NAME": b"{{ PACKAGE_CONTENT_NAME }}",
+    "ICON_URL": b"{{ PACKAGE_ICON_URL }}",
+    "PACKAGE_TYPE": b"{{ PACKAGE_TYPE }}",
     "PACKAGE_SIZE": (0x123456789ABCDEFF).to_bytes(8, 'little'),
 }
 

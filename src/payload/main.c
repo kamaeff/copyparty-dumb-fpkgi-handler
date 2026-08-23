@@ -6,12 +6,12 @@
 #include "struct.h"
 
 
-static const char content_id[0x30] = "\x11\x11\x11\x11\x11\x11\x11\x11PACKAGE_CONTENT_ID";
-static char content_url[0x800] = "\x22\x22\x22\x22\x22\x22\x22\x22PACKAGE_CONTENT_URL";
-static char content_name[0x259] = "\x33\x33\x33\x33\x33\x33\x33\x33PACKAGE_CONTENT_NAME";
-static char icon_url[0x800] = "\x44\x44\x44\x44\x44\x44\x44\x44PACKAGE_ICON_URL";
-static char package_type[0x15] = "\x55\x55\x55\x55\x55\x55\x55\x55PACKAGE_TYPE";
-static unsigned long size = 0x123456789ABCDEFF;
+static const char content_id[0x30] = "{{ PACKAGE_CONTENT_ID }}";
+static const char content_url[0x800] = "{{ PACKAGE_CONTENT_URL }}";
+static const char content_name[0x259] = "{{ PACKAGE_CONTENT_NAME }}";
+static const char icon_url[0x800] = "{{ PACKAGE_ICON_URL }}";
+static const char package_type[0x15] = "{{ PACKAGE_TYPE }}";
+static const unsigned long size = 0x123456789ABCDEFF;
 
 
 int(*sceBgftInitialize)(struct bgft_init_params*);
@@ -66,7 +66,7 @@ void printf_notify(char* fmt, ...) {
 	req.HasIcon = 1;
 	req.TargetId = -1;
 
-	strlcpy(req.IconImageUri, "cxml://psnotification/tex_default_icon_smaps", notify_bufsize_icon);
+	strlcpy(req.IconImageUri, icon_url[0] ? icon_url : "cxml://psnotification/tex_default_icon_download", notify_bufsize_icon);
 	
 	printf("[DEBUG] printf_notify: %s\n", req.Message);
 	sceKernelSendNotificationRequest(0, (SceNotificationRequest *)&req, sizeof(SceNotificationRequest), 0);
@@ -77,27 +77,8 @@ void finalize(struct bgft_init_params* ip) {
 	munmap(ip->mem, ip->size);
 }
 
-
-// asm("clear_stack:\nmov $0x800,%ecx\nxor %rax, %rax\n.L1:\npush %rax\nloop .L1\nadd $0x4000,%rsp\nret");
-// void clear_stack(void);
-
-
 int main()
 {
-    // // works with goldhen without all this stuff
-    // // keep it commented out just in case
-	// struct jbc_cred cred;
-	// jbc_get_cred(&cred);
-	// jbc_jailbreak_cred(&cred);
-
-	// cred.jdir = 0;
-	// cred.sceProcType = 0x3800000000000010;
-	// cred.sonyCred = 0x40001c0000000000;
-	// cred.sceProcCap = 0x900000000000ff00;
-	// jbc_set_cred(&cred);
-
-	// clear_stack();
-
 	init_libs();
 
 	int rv;
@@ -136,32 +117,29 @@ int main()
 	}
 
 	rv = sceBgftDebugDownloadRegisterTask(&bgft_params, &task);
-	if (rv != 0x80990088 && task != BGFT_INVALID_TASK_ID) {
+	if (rv != 0x80990088 && rv != 0x80990086 && task != BGFT_INVALID_TASK_ID) {
 		rv = sceBgftDownloadStartTask(task);
 		finalize(&ip);
 		return 0;
 	}
 	if (rv == 0x80990088) {
-		printf_notify("PKG DL: Package Already Installed!");
+		printf_notify("PKG DL: Package Already Installed!\n%s", content_name);
 		finalize(&ip);
 		return 0;
 	}
 	if (rv == 0x80990086){
-		printf_notify("PKG DL: Package with the same content id is already in downloads list.");
+		printf_notify("PKG DL: Package is already downloading.\n%s", content_name);
 		finalize(&ip);
-		return 1;
+		return 0;
 	}
 	if (rv == 0x80990039 || rv == 0x80A30026) {
 		printf_notify("PKG DL: Insufficient storage space.\nPlease free up space on your hard drive.");
-		finalize(&ip);
-		return 2;
-	}
-	if (rv == 0x80990085) {
+	} else if (rv == 0x80990085) {
 		printf_notify("PKG DL: Insufficient storage space.\nPlease free up non fragmented space on your hard drive.");
-		finalize(&ip);
-		return 3;
+	} else {
+		printf_notify("PKG DL: BGFT Error 0x%X", rv);
 	}
-	printf_notify("PKG DL: BGFT Error %X", rv);
+
 	finalize(&ip);
 	return -1;
 }

@@ -163,116 +163,94 @@ addEventListener("DOMContentLoaded", async function() {
 
 
     ////// sending requests to the server {
-    function doFetch(file) {
+    async function doFetch(file) {
         updateLead(file, "...");
         let url = SR + '/__fpkgtb/sender' + file.href;
-        if (file.k) {
-            url += `?k=${file.k}`
-        }
+        // TODO: this approach doesn't work with sceBgft
+        // if (file.k) {
+        //     url += `?k=${file.k}`
+        // }
         const name = file.name;
-        return fetch(url, {
-            method: 'GET',
-            signal: AbortSignal.timeout(3000),
-        }).then(
-            async (res) => {
-                if (res.status < 200 || res.status >= 400) {
-                    return {
-                        success: false,
-                        message: `HTTP ${res.status} ${res.statusText}`
-                    }
-                }
-                const body = (await res.text()).trim();
-                if (!body) {
-                    return {
-                        success: false,
-                        message: `empty response body from server\nprobably some other hooks are enabled`
-                    }
-                }
-                if (body != 'sent') {
-                    return {
-                        success: false,
-                        message: `error from server:\n${body}`
-                    }
-                }
-                return {
-                    success: true,
-                    message: 'sent to the playstation'
-                }
-            },
-            (err) => {
-                return {
-                    success: false,
-                    message: `${err.message}: ${err.cause?.message}`
-                }
+        const ret = {success: null, message: '', file};
+        try {
+            const res = await fetch(url, {
+                method: 'GET',
+                signal: AbortSignal.timeout(3000),
+            });
+            const body = (await res.text()).trim();
+            // TODO: handle response code and print message only if text/plain
+            // But maybe I don't need it
+            if (!body) {
+                ret.success = false;
+                ret.message = `empty response body from the server\nprobably some other handlers are enabled`;
+            } else if (body != 'sent') {
+                ret.success = false;
+                ret.message = `error from server:\n${body}`;
+            } else {
+                ret.success = true;
+                ret.message = 'sent to the playstation';
             }
-        ).then(res => {
-            const state = res.success ? 'sent' : 'failed';
-            updateLead(file, state);
-            res.file = file;
-            return res;
-        });
+        } catch (err) {
+            ret.success = false;
+            ret.message = `${err.message}: ${err.cause?.message}`;
+        }
+
+        updateLead(file, ret.success ? 'sent' : 'failed');
+        return ret;
     }
 
-    // function fetchOne(file) {
-    //     return doFetch(file).then(res => {
-    //         console.log(res);
-    //         if (res.success) {
-    //             toast.ok(5, `<b>FPKG install success</b>\n${res.file.name}\n${res.message}`);
-    //         } else {
-    //             toast.err(null, `<h4>FPKG install failed</h4>\n${res.file.name}\n${res.message}`);
-    //         }
-    //     });
-    // }
-
-    function fetchMany(files) {
+    async function fetchMany(files) {
         const ps = {
             sent: [],
             failed: [],
         };
-        const results = files.map(file => doFetch(file).then(res => {
-            res.file = file;
+        for (const file of files) {
+            const res = await doFetch(file);
+            const timer = new Promise(r => setTimeout(r, 600));
             if (res.success) {
                 ps.sent.push(res);
             } else {
                 ps.failed.push(res);
             }
             toast.inf(null, `sent: ${ps.sent.length}\nfailed: ${ps.failed.length}`);
-        }));
-        Promise.allSettled(results).then(() => {
-            const messages = [];
-            const success = (ps.sent.length && !ps.failed.length);
+            // Goldhen can't handle too many payloads at a time
+            // so give it a bit of time
+            await timer;
+        }
 
-            messages.push(success
-                ? `<h4>FPKG install: successfully sent ${ps.sent.length}/${files.length} packages</h4>`
-                : `<h4>FPKG install: failed to send ${ps.failed.length}/${files.length} packages</h4>`
-            );
-            for (const p of ps.failed) {
-                messages.push(`😐 <strong>${p.file.name}</strong>`);
-                messages.push(`<strong>ERROR:</strong> ${p.message}`);
-            };
-            if (ps.failed.length) {
-                messages.push(`<a class="btn" id="fpkg-toast-retry">↻ retry ${ps.failed.length}</a>`)
-            }
-            if (!success) {
-                messages.push('\n');
-            }
-            for (const p of ps.sent) {
-                messages.push(`✅ <strong>${p.file.name}</strong> ${p.message}`);
-            }
+        const messages = [];
+        const success = (ps.sent.length && !ps.failed.length);
 
-            const message = messages.join('\n');
-            const t = success ? toast.ok : toast.err;
-            const timeout = success ? 10 : null;
-            t(timeout, message);
-            console.debug({ps});
-            if (ps.failed.length) {
-                const retry_b = ebi('fpkg-toast-retry');
-                console.debug({retry_b});
-                if (retry_b) {
-                    retry_b.onclick = () => fetchMany(ps.failed.map(p => p.file));
-                }
+        messages.push(success
+            ? `<h4>FPKG install: successfully sent ${ps.sent.length}/${files.length} packages</h4>`
+            : `<h4>FPKG install: failed to send ${ps.failed.length}/${files.length} packages</h4>`
+        );
+        for (const p of ps.failed) {
+            messages.push(`😐 <strong>${p.file.name}</strong>`);
+            messages.push(`<strong>ERROR:</strong> ${p.message}`);
+        };
+        if (ps.failed.length) {
+            messages.push(`<a class="btn" id="fpkg-toast-retry">↻ retry ${ps.failed.length}</a>`)
+        }
+        if (!success) {
+            messages.push('\n');
+        }
+        for (const p of ps.sent) {
+            messages.push(`✅ <strong>${p.file.name}</strong> ${p.message}`);
+        }
+
+        const message = messages.join('\n');
+        const t = success ? toast.ok : toast.err;
+        const timeout = success ? 10 : null;
+        t(timeout, message);
+        console.debug({ps});
+        if (ps.failed.length) {
+            const retry_b = ebi('fpkg-toast-retry');
+            console.debug({retry_b});
+            if (retry_b) {
+                retry_b.onclick = () => fetchMany(ps.failed.map(p => p.file));
             }
-        })
+        }
     }
     ////// }
 

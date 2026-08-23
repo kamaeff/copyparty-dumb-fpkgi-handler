@@ -6,12 +6,23 @@ from enum import Enum
 from io import BufferedReader
 import json
 from collections import namedtuple
+import os
 from pathlib import Path
+import socket
+import sys
+import time
 from urllib.parse import quote
 import re
 import struct
 
-
+# TODO: NAVESTI KRASOTU
+# TODO: CP_HOST
+# TODO: DON'T FORGET HOW FILEKEYS ARE HANDLED BEFORE I WRITE IT DOWN
+# TODO: REVIEW ALL THE tx404, tx403, return "true", return "false", return "" ONE MORE TIME
+# TODO: REMOVE DEFUALT PS4_IP VALUE
+# TODO: RENAME EVERYTHING TB -> V
+# TODO: JS; IT'S STILL DIRTY
+# TODO: REGROUP AND PROBABLY RENAME AND PROBABLY REFACTOR SOME STUFF
 
 PAYLOAD_CONTENT_ID_SIZE = 0x30
 PAYLOAD_CONTENT_URL_SIZE = 0x800
@@ -20,6 +31,14 @@ PAYLOAD_ICON_URL_SIZE = 0x800
 PAYLOAD_PACKAGE_TYPE_SIZE = 0x15
 PAYLOAD_PACKAGE_SIZE_SIZE = 0x8
 
+PS4_IP = os.getenv('FPKGTB_PS4_IP', '192.168.31.125')
+if not PS4_IP:
+    raise Exception('Put your PS4 IP addres into environment variable FPKGTB_PS4_IP!')
+CP_HOST = os.getenv('FPKGTB_CP_HOST')
+if CP_HOST:
+    CP_HOST = CP_HOST.rstrip('/')
+
+SEND_USERS = os.getenv('FPKGTB_SEND_USERS', '*').replace(' ', '').split(',')
 
 ###### Build stuff ######
 
@@ -50,6 +69,7 @@ SCRIPT_VFS_PATH = COMMON_VFS_PREFIX + 'script.js'
 STYLE_VFS_PATH = COMMON_VFS_PREFIX + 'style.css'
 COVER_VFS_PREFIX = COMMON_VFS_PREFIX + 'cover/'
 SENDER_VFS_PREFIX = COMMON_VFS_PREFIX + 'sender/'
+DOWNLOAD_PREFIX = COMMON_VFS_PREFIX + 'dl/'
 COVER_POSTFIX = '.png'
 JSON_VFS_PATH_PATTERN = re.compile(rf'^{COMMON_VFS_PREFIX}(?:all|(?P<category>DLC|games|apps|PS2|updates|homebrew)).json$')
 
@@ -67,31 +87,36 @@ def main(*args, **kwargs):
     ):
         raise Exception(f'Unknown args: {args=!r}, {kwargs=!r}')
 
-    # called as on404 handler
+    # called as on404/on403 handler
     cli, vn, rem = args
     if not rem.startswith(COMMON_VFS_PREFIX):
-        return str(cli.tx_404())
+        if cli.vpath == '':
+            return 'home'
+        return ''
 
     if rem == SCRIPT_VFS_PATH:
         cli.reply(SCRIPT_JS, 200, "text/javascript")
-        return "true"
+        return 'false'
 
     if rem == STYLE_VFS_PATH:
         cli.reply(STYLE_CSS, 200, "text/css")
-        return "true"
+        return 'false'
 
     if rem.startswith(COVER_VFS_PREFIX):
         return handle_cover(cli, vn, rem[len(COVER_VFS_PREFIX):-len(COVER_POSTFIX)])
 
     if rem.startswith(SENDER_VFS_PREFIX):
         return handle_send(cli, vn, rem[len(SENDER_VFS_PREFIX):])
-
+    
+    if rem.startswith(DOWNLOAD_PREFIX):
+        return handle_download(cli, vn, rem[len(DOWNLOAD_PREFIX):])
 
     match = JSON_VFS_PATH_PATTERN.match(rem)
-    if match is None:
-        return str(cli.tx_404())
+    if match:
+        return handle_json(cli, vn, match.group('category') or None)
 
-    return handle_json(cli, vn, match.group('category') or None)
+    return ''
+
 
 ###### /Dispatching ######
 
@@ -99,24 +124,162 @@ def main(*args, **kwargs):
 
 ###### Main logic ######
 
+_ipnorm = None
+
+def is_ps4(cli):
+    global _ipnorm
+    if not _ipnorm:
+        module = sys.modules.get(cli.__class__.__module__)
+        _ipnorm = getattr(module, 'ipnorm', lambda x: x)
+    return _ipnorm(cli.ip) == _ipnorm(PS4_IP)
+
+def ndp(dpath):
+    """
+    normalize directory path
+    if it is root path ('' or '/') it must be ''
+    otherwise:
+    directory path should not start with '/'
+    directory path should end with '/'
+    so concatenating dir1 + dir2 + dir3 is predictable:
+    - directories are separated by '/'
+    - no '/' repeated
+    """
+    dpath = dpath.strip('/')
+    return dpath + '/' if dpath else dpath
+
+def nfp(fpath):
+    """
+    normalize file path
+    file path should not start nor end with '/'
+    so concatenating dir1 + dir2 + file3 is predictable:
+    - directories and files are separated by '/'
+    - no '/' repeated
+    """
+    return fpath.strip('/')
+
+
+def handle_download(cli, vn, rem):
+    """
+    this exists for two reasons:
+    - to bypass copyparty's filekeys (I could do something smarter but why)
+    - to allow easy access to all pkg files with basic setup (just put in handlers and you can send any pkg)
+    see https://github.com/9001/copyparty/issues/1619
+    """
+    print("HANDLE_DOWNLOAD")
+    print(f"{is_ps4(cli)=}")
+    print(f"{rem.lower().endswith('.pkg')=}")
+    print(f"{vn.canonical(rem)=}")
+    if not is_ps4(cli) or not rem.lower().endswith('.pkg'):
+        return ''
+    cli.tx_file('oh_g', vn.canonical(rem))
+    return 'false'
+
+def urlpath(dirs, fp=None, *suf):
+    path = ''.join(ndp(dir) for dir in dirs)
+    if fp is not None:
+        path += nfp(fp) + ''.join(suf)
+    return quote(path)
+
+
 def can_send(uname):
-    return uname != '*'
+    allow_authorized = False
+    users = []
+    for user in SEND_USERS:
+        if user == '*':             # anyone allowed, default
+            return True
+        if user == '@':             # only authorized allowd
+            allow_authorized = True
+        if user == uname:           # explicitly allowed
+            return True
+        if user == '-' + uname:     # forbidden
+            return False
+    return allow_authorized and uname != '*'
+
+def fill_template(content_id, content_url, content_name, icon_url, package_type, package_size):
+    p = bytearray(PAYLOAD_TEMPLATE)
+    items = [
+        (content_id, PAYLOAD_CONTENT_ID_START, PAYLOAD_CONTENT_ID_SIZE),
+        (content_url, PAYLOAD_CONTENT_URL_START, PAYLOAD_CONTENT_URL_SIZE),
+        (content_name, PAYLOAD_CONTENT_NAME_START, PAYLOAD_CONTENT_NAME_SIZE),
+        (icon_url, PAYLOAD_ICON_URL_START, PAYLOAD_ICON_URL_SIZE),
+        (package_type, PAYLOAD_PACKAGE_TYPE_START, PAYLOAD_PACKAGE_TYPE_SIZE),
+    ]
+    for value, start, maxsize in items:
+        value = bytes(value, 'utf-8', 'replace')[:maxsize - 1] + b'\0'
+        p[start:start+len(value)] = value
+
+    package_size = package_size.to_bytes(8, "little")
+    package_size = package_size[:PAYLOAD_PACKAGE_SIZE_SIZE]
+    p[PAYLOAD_PACKAGE_SIZE_START:PAYLOAD_PACKAGE_SIZE_START+len(package_size)]
+    return p
+
 
 def handle_send(cli, vn, rem):
-    # check send.py on the desktop
-    log = cli.log
-    log('henlo from sendr')
-    log(str(rem))
-    log(f'{cli.uparam.get('k')=!r}')
+    # import random;
+    # if random.random() > 0.6:
+    #     cli.reply(b'random error', 400, 'text/plain')
+    #     return "true"
+    # else:
+    #     cli.reply(b'sent', 200, 'text/plain')
+    #     return "true"
 
-    import random
-    import time
-    time.sleep(0.2 + random.random())
-    if random.random() > 0.7:
-        cli.reply(b'failed successfully', 400, "text/plain")
+    if not can_send(cli.uname):
+        cli.reply(
+            b'you are not allowed to send payloads and packages from this server',
+            403,
+            'text/plain'
+        )
+        return 'false'
+
+    if not SEND_PERMISSIONS.can_access(cli.uname, vn, rem):
+        cli.tx_404(is_403=True)
+        return 'false'
+
+    realpath = Path(vn.realpath, rem).resolve()
+    if not realpath.is_file():
+        cli.tx_404()
+        return 'false'
+    suffix = realpath.suffix.lower()
+    is_pkg = suffix == '.pkg'
+    is_payload = suffix == '.bin' or suffix == '.elf'
+    
+    if not is_payload and not is_pkg:
+        cli.reply(b'looks like it is not a .pkg, .bin or .elf file', 400, 'text/plain')
         return "false"
-    cli.reply(b'sent', 200, "text/plain")
-    return "true"
+    
+    if is_payload:
+        with socket.create_connection((PS4_IP, '9090')) as con:
+            with open(realpath, 'rb') as f:
+                con.sendfile(f)
+        cli.reply(b'sent', 200, 'text/plain')
+        time.sleep(0.4)
+        return "false"
+
+    with PkgFile(realpath) as pkg:
+        if not pkg.is_valid:
+            cli.reply(b'invalid PKG file', 400, 'text/plain')
+            return("false")
+        param_sfo = pkg.extract_param_sfo()
+
+    base_url = get_base_url(cli, bauth=False)
+    params = {}
+    params['content_name'] = param_sfo.get('TITLE', 'Content')
+    params['content_id'] = param_sfo['CONTENT_ID']
+    params['package_type'] = 'PS4' + param_sfo.get('CATEGORY', 'GD').upper()
+    params['content_url'] = base_url + urlpath([vn.vpath, DOWNLOAD_PREFIX], rem)
+    # https://github.com/OSM-Made/PS4-Notify
+    params['icon_url'] = 'cxml://psnotification/tex_default_icon_download'
+    params['package_size'] = pkg.size
+    cli.log(f'{params=}')
+    if pkg.has_cover_image():
+        params['icon_url'] = (base_url + urlpath([vn.vpath, COVER_VFS_PREFIX], rem, COVER_POSTFIX))
+    
+    with socket.create_connection((PS4_IP, '9090')) as con:
+        con.sendall(fill_template(**params))
+    cli.reply(b'sent', 200, 'text/plain')
+    time.sleep(0.4)
+    return "false"
+
 
 def handle_thumb_extract(abspath, **kwargs):
     f = None
@@ -133,23 +296,23 @@ def handle_thumb_extract(abspath, **kwargs):
         raise e
 
 def handle_cover(cli, vn, rem):
-    vfs_path = Path(vn.vpath, rem)
+    if not is_ps4(cli) and not REQUIRED_PERMISSIONS.can_access(cli.uname, vn, rem):
+        cli.tx_404(is_403=True)
+        return 'false'
 
-    if not REQUIRED_PERMISSIONS.can_access(vn, vfs_path, cli.uname):
-        return str(cli.tx_404(is_403=True))
-
-    with PkgFile(Path(vn.realpath, rem)) as pkg:
+    with PkgFile(vn.canonical(rem)) as pkg:
         image = pkg.extract_cover_image()
 
     if image is None:
-        return str(cli.tx_404())
+        cli.tx_404()
+        return 'false'
 
-    cli.reply(image, 200, "image/png")
-    return "true"
+    cli.reply(image, 200, 'image/png')
+    return 'false'
 
 
 def handle_json(cli, vn, category):
-    cached = Cache(cli.uname, vn.vpath)
+    cached = Cache(cli.uname, cli.ip, vn.vpath)
     packages = cached.data
     if packages is None:
         packages = get_all_packages(cli, vn)
@@ -161,62 +324,86 @@ def handle_json(cli, vn, category):
     response_body = json.dumps({"DATA": packages}).encode("utf-8")
 
     cli.reply(response_body, 200, "application/json")
-    return "true"
+    return 'false'
 
 
 def get_all_packages(cli, vn):
-    protocol = "https" if cli.is_https else "http"
-    basic_auth=''
-    if cli.uname != '*' or cli.pw:
-        basic_auth = f'{cli.uname}:{cli.pw}@'
-    base_url = f"{protocol}://{basic_auth}{cli.host}{cli.args.SRS}"
+    base_url = get_base_url(cli)
+    dl_prefix = DOWNLOAD_PREFIX if is_ps4(cli) else ''
 
+    # bypass permission check for main PS4 in basic setup when there is no dedicated PS4 account (low performance, zero setup)
+    # otherwise return packages based on permissions (e.g. user can exclude some dirs from serving to FPKGi)
+    perms = PermSet(Permission()) if cli.uname == '*' and is_ps4(cli) else REQUIRED_PERMISSIONS
     packages = {}
-    for walk_result in vn.walk('', '', [], cli.uname, REQUIRED_PERMISSIONS.permissions, 0, False, False, True):
-        vfs_subdir = walk_result[2]
-        fs_parent_dir = walk_result[3]
-        files = (f for f in walk_result[4] if f[0].endswith('.pkg'))
-        for file_name, stat in files:
-            with PkgFile(Path(fs_parent_dir, file_name)) as pkg:
-                param_sfo = pkg.extract_param_sfo()
-                has_cover_image = pkg.has_cover_image()
+    vols = {
+        vp: vfs
+        for vp, vfs in cli.asrv.vfs.all_vols.items()
+        if vp.startswith(vn.vpath) and perms.can_access(cli.uname, vfs)
+    }
+    print(f'VOLSVOLS {set(vols)=}')
+    for vp2, vn2 in vols.items():
+        print('\n\n')
+        print(f'VFS {vp2=}')
+        for vn3, rem3, _rel, fsroot, files, _rdirs, _vvirt in vn2.walk(
+            '', '', [], cli.uname, perms.permissions, 0, False, False, False
+        ):
+            for file_name, stat in files:
+                if file_name[-4:].lower() != '.pkg':
+                    continue
+                abspath = Path(fsroot, file_name).resolve()
+                if abspath.suffix.lower() != '.pkg' or abspath in packages:
+                    continue
+                with PkgFile(abspath) as pkg:
+                    if not pkg.is_valid:
+                        continue
+                    param_sfo = pkg.extract_param_sfo()
 
-            url = base_url + quote(f'{vn.vpath}/{vfs_subdir}/{file_name}')
-            icon_url = (base_url + quote(f'{vn.vpath}/{COVER_VFS_PREFIX}{vfs_subdir}/{file_name}{COVER_POSTFIX}')) if has_cover_image else None
-            packages[url] = format_pkg_params(param_sfo, file_name[:-4], icon_url, stat.st_size)
+                # convert to vpath relative to original request vn
+                # in case handlers are disabled in subvolumes
+                rem = ndp(vn3.vpath)[len(ndp(vn.vpath)):] + ndp(rem3) + nfp(file_name)
 
-    return packages
+                url = base_url + urlpath([vn.vpath, dl_prefix], rem)
+                icon_url = (base_url + urlpath(
+                    [vn.vpath, COVER_VFS_PREFIX],
+                    rem, COVER_POSTFIX
+                )) if pkg.has_cover_image() else None
+                packages[abspath] = (
+                    url,
+                    format_pkg_params(param_sfo, file_name[:-4], icon_url, stat.st_size)
+                )
+    return dict(packages.values())
 
 
 class Cache:
     _caches = {}
 
-    def __new__(cls, username, vfs_root):
-        cached = cls._caches.get((username, vfs_root))
+    def __new__(cls, username, ip, vfs_root):
+        cached = cls._caches.get((username, ip, vfs_root))
         if cached is not None and cached.is_valid:
             return cached
 
         new_instance = super().__new__(cls)
         new_instance.username = username
+        new_instance.ip = ip
         new_instance.vfs_root = vfs_root
         new_instance.cached_at = dt.datetime.min
         new_instance._data = {}
 
-        cls._caches[(username, vfs_root)] = new_instance
+        cls._caches[(username, ip, vfs_root)] = new_instance
 
         return new_instance
 
     @property
     def data(self):
         if self.is_valid:
-            print(f'Got packages from cache for user {self.username} vpath {self.vfs_root}')
+            print(f'Got packages from cache for user "{self.username}" ip "{self.ip}" vpath "{self.vfs_root}"')
             return self._data
-        print(f'No packages from cache for user {self.username} vpath {self.vfs_root}')
+        print(f'No packages from cache for user "{self.username}" ip "{self.ip}" vpath "{self.vfs_root}"')
         return None
 
     @data.setter
     def data(self, data):
-        print(f'Caching packages for user {self.username} vpath {self.vfs_root}')
+        print(f'Caching packages for user "{self.username}" ip "{self.ip}" vpath "{self.vfs_root}"')
         self._data = data
         self.cached_at = dt.datetime.now()
 
@@ -340,6 +527,14 @@ class Category(object):
 
 ###### Copyparty stuff ######
 
+def get_base_url(cli, bauth=True):
+    protocol = "https" if cli.is_https else "http"
+    basic_auth=''
+    if bauth and (cli.uname != '*' or cli.pw):
+        basic_auth = f'{cli.uname}:{cli.pw}@'
+    return f"{protocol}://{basic_auth}{cli.host}{cli.args.SRS}"
+    
+
 permission_fields = ('read', 'write', 'move', 'delete', 'get', 'upget', 'html', 'admin', 'dot')
 Permission = namedtuple('Permission', permission_fields, defaults=(False,) * len(permission_fields))
 
@@ -358,20 +553,20 @@ class PermSet(object):
                 return True
         return False
 
-    def can_access(self, vfs, path, username):
-        """Checks if spcified user can access specified path in specified VFS"""
-        existing_permission = vfs.can_access(str(path), uname=username)
+    def can_access(self, uname, vn, rem: Path | str = ''):
+        """Checks if specified user can access specified path in specified VFS"""
+        existing_permission = vn.can_access(str(rem), uname=uname)
         return self.check(existing_permission)
 
 
-# any of r/g/u/h/a is fine
+# any of r/g/G/h is fine
 REQUIRED_PERMISSIONS = PermSet(
     Permission(read=True),
     Permission(get=True),
     Permission(upget=True),
     Permission(html=True),
-    Permission(admin=True),
 )
+SEND_PERMISSIONS = PermSet(Permission(read=True))
 
 ###### /Copyparty stuff ######
 
@@ -387,7 +582,7 @@ class PkgFile(object):
     SFO_TYPE_UTF8_NULL_TERMINATED = 0x204
     SFO_TYPE_UTF8_NO_NULL = 0x04
 
-    REQUIRED_PARAMS = {'TITLE_ID', 'TITLE', 'CONTENT_ID', 'VERSION', 'APP_VER', 'SYSTEM_VER', 'CATEGORY', 'EMU_VERSION', 'SYSTEM_ROOT_VER', 'CONTENT_VER', 'PUBTOOLINFO'}
+    REQUIRED_PARAMS = {'TITLE_ID', 'TITLE', 'CONTENT_ID', 'VERSION', 'APP_VER', 'SYSTEM_VER', 'CATEGORY', 'EMU_VERSION', 'CONTENT_VER'}
 
     def __init__(self, filepath: str | Path):
         try:
@@ -396,6 +591,7 @@ class PkgFile(object):
             if self.seek(0).read_uint_be() != 0x7F434E54:
                 raise Exception(f'Invalid PKG magic for file {filepath}')
             self.entries_locations = self._locate_entries()
+            self.size = os.stat(filepath).st_size
             self.is_valid = True
         except Exception as e:
             print(e)
