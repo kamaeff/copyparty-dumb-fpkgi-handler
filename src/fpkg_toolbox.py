@@ -25,6 +25,8 @@ import struct
 # TODO: RENAME EVERYTHING TB -> V
 # TODO: JS; IT'S STILL DIRTY
 # TODO: TEST CP_HOST
+# TODO: TEST SEND_USERS
+# TODO: TEST DEMO RUN (also with no deps e.g. on clean alpine)
 # TODO: REMOVE OR CONFIGURE BASIC AUTH FOR FPKGI SERVER
 # TODO: ADD SECONDARY PS4 IP ADDRESSES TO ENABLE SAME ACCESS LEVEL FOR FPKGI FOR DIFFERENT CONSOLES??? gh issue
 # TODO: ADD MAPPING UNAME:PS4IP??? just create gh issue and do it if someone uses this software and thinks they need this feature
@@ -86,10 +88,16 @@ def main(*args, **kwargs):
     if len(args) == 1 and isinstance(args[0], str) and kwargs:
         return handle_thumb_extract(*args, **kwargs)
 
-    # called externally as tag extractor
-    # see if __name__ in the end
+    # called externally
+    # see 'if __name__' in the end
     if not args and not kwargs and __name__ == '__main__':
-        exit(handle_mtag(Path(sys.argv[1])))
+        if list(sys.argv[1:]) == ['demo', 'run']:
+            # manual demo run
+            handle_demo_run()
+            assert False, 'unreachable part of code; handle_demo_run() should\'ve run execve or exit'
+        else:
+            # called by copyparty as tag extractor
+            exit(handle_mtag(Path(sys.argv[1])))
 
     if not (
         len(args) == 3
@@ -102,7 +110,7 @@ def main(*args, **kwargs):
     # called as on404/on403 handler
     cli, vn, rem = args
     if not rem.startswith(COMMON_VFS_PREFIX):
-        if cli.vpath == '':
+        if cli.vpath in ' /':
             return 'home'
         return ''
 
@@ -131,6 +139,38 @@ def main(*args, **kwargs):
 
 ###### /Dispatching ######
 
+def handle_demo_run():
+    if not os.path.exists('./copyparty-sfx.py'):
+        print('File "copyparty-sfx.py" not found!', file=sys.stderr)
+        exit(1)
+    if not CP_HOST:
+        print('For this demo run please set environment variable FPKGTB_CP_HOST to http://<your-local-ip>:3923', file=sys.stderr)
+        exit(1)
+    try:
+        os.chmod('./copyparty-sfx.py', 0o755)
+        os.chmod('./fpkg_toolbox.py', 0o755)
+
+        os.execve(
+            './copyparty-sfx.py',
+            [
+                '-e2dsa', '-e2ts', '-no-crt', '--http-only', '--ansi',
+                '--name', 'fpkg-vault',
+
+            #    '--th-extr-cv',    # hopefully it gets merged soon
+                '--th-extract', 'pkg=./fpkg_toolbox.py',
+                '--on404', './fpkg_toolbox.py',
+                '--on403', './fpkg_toolbox.py',
+                '--js-browser', '/__fpkgtb/script.js',
+                '--css-browser', '/__fpkgtb/style.css',
+
+                '-mtp', 'type,category,title,title_id,content_id,app_ver,version,system_ver=an,epkg,ePKG,c1,f,./fpkg_toolbox.py',
+                '-mte', '+type,category,title,title_id,content_id,app_ver,version,system_ver',
+            ],
+            os.environ
+        )
+    except Exception as e:
+        print('Failed to run copyparty from demo run script\n\n', file=sys.stderr)
+        raise e
 
 ###### Tags extraction ######
 
