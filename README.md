@@ -14,6 +14,10 @@ If you need a working version, just grab it from the changelog below.
 
 e.g.: alpine; apk add: make gcc yasm file; py3-rjsmin; openrc openssh;
 
+run requirements:
+- python
+- e2d, e2ts, ffmpeg with jxl/webp support OR mutagen + PIL/VIPS,
+
 ### Changelog
 
 - [2026-05-03](https://github.com/kamaeff/copyparty-dumb-fpkgi-handler/tree/652c295d46c416710bc240bf7664bacb74e19f74):

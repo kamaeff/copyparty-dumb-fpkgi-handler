@@ -1,4 +1,5 @@
 import base64
+import os
 import re
 
 try:
@@ -47,5 +48,5 @@ py_s = py_s.replace('\nSCRIPT_JS = None', '\nSCRIPT_JS = ' + repr(bytes(jsmin(js
 
 with open('build/fpkg_toolbox.py', 'wt') as out:
     out.write(py_s)
-
+os.chmod('build/fpkg_toolbox.py', 0o755)
 print('built build/fpkg_toolbox.py')

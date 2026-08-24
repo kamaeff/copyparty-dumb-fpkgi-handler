@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 # on404 handler
 # sends custom response instead of the default 404 page
 
@@ -15,16 +17,17 @@ from urllib.parse import quote
 import re
 import struct
 
-# TODO: NAVESTI KRASOTU
-# TODO: CP_HOST
+
 # TODO: DON'T FORGET HOW FILEKEYS ARE HANDLED BEFORE I WRITE IT DOWN
 # TODO: REVIEW ALL THE tx404, tx403, return "true", return "false", return "" ONE MORE TIME
+# TODO: REVIEW ALL THE is_ps4() and cli.uname == '*' and rem.lower().endswith('.pkg') combinations; maybe introduce some functionss
 # TODO: REMOVE DEFUALT PS4_IP VALUE
 # TODO: RENAME EVERYTHING TB -> V
 # TODO: JS; IT'S STILL DIRTY
-# TODO: REGROUP AND PROBABLY RENAME AND PROBABLY REFACTOR SOME STUFF
+# TODO: TEST CP_HOST
 # TODO: REMOVE OR CONFIGURE BASIC AUTH FOR FPKGI SERVER
-# TODO: ADD SECONDARY PS4 IP ADDRESSES TO ENABLE SAME ACCESS LEVEL FOR FPKGI FOR DIFFERENT CONSOLES
+# TODO: ADD SECONDARY PS4 IP ADDRESSES TO ENABLE SAME ACCESS LEVEL FOR FPKGI FOR DIFFERENT CONSOLES??? gh issue
+# TODO: ADD MAPPING UNAME:PS4IP??? just create gh issue and do it if someone uses this software and thinks they need this feature
 
 PAYLOAD_CONTENT_ID_SIZE = 0x30
 PAYLOAD_CONTENT_URL_SIZE = 0x800
@@ -38,7 +41,9 @@ if not PS4_IP:
     raise Exception('Put your PS4 IP addres into environment variable FPKGTB_PS4_IP!')
 CP_HOST = os.getenv('FPKGTB_CP_HOST')
 if CP_HOST:
-    CP_HOST = CP_HOST.rstrip('/')
+    CP_HOST = CP_HOST.rstrip('/').split('://')
+    if len(CP_HOST) != 2:
+        raise Exception(f'Invalid FPKGTB_CP_HOST: {'://'.join(CP_HOST)}; valid examples: http://192.168.1.71:3923, https://party.mydomain.fun')
 
 SEND_USERS = os.getenv('FPKGTB_SEND_USERS', '*').replace(' ', '').split(',')
 
@@ -81,6 +86,11 @@ def main(*args, **kwargs):
     if len(args) == 1 and isinstance(args[0], str) and kwargs:
         return handle_thumb_extract(*args, **kwargs)
 
+    # called externally as tag extractor
+    # see if __name__ in the end
+    if not args and not kwargs and __name__ == '__main__':
+        exit(handle_mtag(Path(sys.argv[1])))
+
     if not (
         len(args) == 3
         and args[0].__class__.__name__ == 'HttpCli'
@@ -119,112 +129,124 @@ def main(*args, **kwargs):
 
     return ''
 
-
 ###### /Dispatching ######
 
 
+###### Tags extraction ######
 
-###### Main logic ######
-
-_ipnorm = None
-
-def is_ps4(cli):
-    global _ipnorm
-    if not _ipnorm:
-        module = sys.modules.get(cli.__class__.__module__)
-        _ipnorm = getattr(module, 'ipnorm', lambda x: x)
-    return _ipnorm(cli.ip) == _ipnorm(PS4_IP)
-
-def ndp(dpath):
+def handle_mtag(path: Path):
     """
-    normalize directory path
-    if it is root path ('' or '/') it must be ''
-    otherwise:
-    directory path should not start with '/'
-    directory path should end with '/'
-    so concatenating dir1 + dir2 + dir3 is predictable:
-    - directories are separated by '/'
-    - no '/' repeated
-    """
-    dpath = dpath.strip('/')
-    return dpath + '/' if dpath else dpath
+    extract FPKG metadata to show it in copyparty file list view
+    mutagen or ffmpeg required
+    copyparty options:
+        -e2dsa
+        -e2ts
+        -mtp type,category,title,title_id,content_id,app_ver,version,system_ver=an,epkg,c1,f,./fpkg_toolbox.py
+        -mte +type,category,title,title_id,content_id,app_ver,version,system_ver
 
-def nfp(fpath):
+    https://github.com/9001/copyparty#file-parser-plugins
     """
-    normalize file path
-    file path should not start nor end with '/'
-    so concatenating dir1 + dir2 + file3 is predictable:
-    - directories and files are separated by '/'
-    - no '/' repeated
-    """
-    return fpath.strip('/')
+    if path.suffix.lower() != '.pkg':
+        print('{}')
+        return 1
+    with PkgFile(path) as pkg:
+        if not pkg.is_valid:
+            print('{}')
+            return 1
+        psfo = pkg.extract_param_sfo()
+
+    # TODO: unduplicate category stuff
+    _BACKPORT_FILENAME_PATTERN = re.compile(r'BACKPORT|FIX[4567]|(?<![A-Z])BP(?![A-Z])|CYB1K', re.IGNORECASE)
+    _PS2_PATTERN = re.compile(r"S[CL][PUE][SMD]")
+
+    params = {
+        name.lower(): value
+        for name, value in psfo.items()
+        if name in {'CATEGORY', 'TITLE', 'TITLE_ID', 'CONTENT_ID', 'APP_VER', 'VERSION', 'SYSTEM_VER'}
+    }
+    cat = params['category']
+    params['type'] = None
+    if cat:
+        if cat == 'ac':
+            params['type'] = 'dlc'
+        elif cat in ['bd', 'gc', 'gd']:
+            params['type'] = 'game'
+        elif cat[:2] == 'gd':
+            params['type'] = 'ps2' if cat[2] in 'oO0' else 'app'
+        elif cat[:2] == 'gp':
+            params['type'] = 'update'
+
+    if _PS2_PATTERN.match(params['title_id']):
+        params['type'] = 'ps2'
+    elif _BACKPORT_FILENAME_PATTERN.search(path.stem):
+        params['type'] = 'backport'
+
+    print(json.dumps(params, indent=4))
+    return 0
+
+###### /Tags extraction ######
 
 
-def handle_download(cli, vn, rem):
+###### Cover image ######
+
+def handle_thumb_extract(abspath, **kwargs):
     """
-    this exists for two reasons:
-    - to bypass copyparty's filekeys (I could do something smarter but why)
-    - to allow easy access to all pkg files with basic setup (just put in handlers and you can send any pkg)
-    see https://github.com/9001/copyparty/issues/1619
+    cover images for copyparty web ui
+    ffmpeg (wtih jxl or webp support) or PIL or VIPS needed
+    copyparty options:
+        --th-extract pkg=./fpkg-toolbox.py
+
+    https://copyparty.eu/cli/#thumb-ex-help-page
     """
-    print("HANDLE_DOWNLOAD")
-    print(f"{is_ps4(cli)=}")
-    print(f"{rem.lower().endswith('.pkg')=}")
-    print(f"{vn.canonical(rem)=}")
-    if not is_ps4(cli) or not rem.lower().endswith('.pkg'):
-        return ''
-    cli.tx_file('oh_g', vn.canonical(rem))
+    f = None
+    try:
+        f = PkgFile(abspath)
+        res = f.get_cover_location()
+        if res is None:
+            return None
+        offset, length = res
+        return 'png', f, offset, 0, length
+    except Exception as e:
+        if f:
+            f.close()
+        raise e
+
+
+def handle_cover(cli, vn, rem):
+    """
+    cover images by url for fpkgi server and fpkg sender
+    copyparty options:
+        --on404 ./fpkg_toolbox.py
+        --on403 ./fpkg_toolbox.py
+    """
+    if not is_ps4(cli) and not ACCESS_PERMISSIONS.can_access(cli.uname, vn, rem):
+        cli.tx_404(is_403=True)
+        return 'false'
+
+    with PkgFile(vn.canonical(rem)) as pkg:
+        image = pkg.extract_cover_image()
+
+    if image is None:
+        cli.tx_404()
+        return 'false'
+
+    cli.reply(image, 200, 'image/png')
     return 'false'
 
-def urlpath(dirs, fp=None, *suf):
-    path = ''.join(ndp(dir) for dir in dirs)
-    if fp is not None:
-        path += nfp(fp) + ''.join(suf)
-    return quote(path)
+###### /Cover image ######
 
 
-def can_send(uname):
-    allow_authorized = False
-    users = []
-    for user in SEND_USERS:
-        if user == '*':             # anyone allowed, default
-            return True
-        if user == '@':             # only authorized allowd
-            allow_authorized = True
-        if user == uname:           # explicitly allowed
-            return True
-        if user == '-' + uname:     # forbidden
-            return False
-    return allow_authorized and uname != '*'
-
-def fill_template(content_id, content_url, content_name, icon_url, package_type, package_size):
-    p = bytearray(PAYLOAD_TEMPLATE)
-    items = [
-        (content_id, PAYLOAD_CONTENT_ID_START, PAYLOAD_CONTENT_ID_SIZE),
-        (content_url, PAYLOAD_CONTENT_URL_START, PAYLOAD_CONTENT_URL_SIZE),
-        (content_name, PAYLOAD_CONTENT_NAME_START, PAYLOAD_CONTENT_NAME_SIZE),
-        (icon_url, PAYLOAD_ICON_URL_START, PAYLOAD_ICON_URL_SIZE),
-        (package_type, PAYLOAD_PACKAGE_TYPE_START, PAYLOAD_PACKAGE_TYPE_SIZE),
-    ]
-    for value, start, maxsize in items:
-        value = bytes(value, 'utf-8', 'replace')[:maxsize - 1] + b'\0'
-        p[start:start+len(value)] = value
-
-    package_size = package_size.to_bytes(8, "little")
-    package_size = package_size[:PAYLOAD_PACKAGE_SIZE_SIZE]
-    p[PAYLOAD_PACKAGE_SIZE_START:PAYLOAD_PACKAGE_SIZE_START+len(package_size)]
-    return p
-
+###### FPKG and payload sender ######
 
 def handle_send(cli, vn, rem):
-    # import random;
-    # if random.random() > 0.6:
-    #     cli.reply(b'random error', 400, 'text/plain')
-    #     return "true"
-    # else:
-    #     cli.reply(b'sent', 200, 'text/plain')
-    #     return "true"
+    """
+    send payload to PS4
+    for FPKG: generate installation payload and send it
 
+    copyparty options:
+        --on404 ./fpkg_toolbox.py
+        --on403 ./fpkg_toolbox.py
+    """
     if not can_send(cli.uname):
         cli.reply(
             b'you are not allowed to send payloads and packages from this server',
@@ -263,7 +285,7 @@ def handle_send(cli, vn, rem):
             return("false")
         param_sfo = pkg.extract_param_sfo()
 
-    base_url = get_base_url(cli, bauth=False)
+    base_url = get_base_url(cli, swaphost=True)
     params = {}
     params['content_name'] = param_sfo.get('TITLE', 'Content')
     params['content_id'] = param_sfo['CONTENT_ID']
@@ -283,37 +305,75 @@ def handle_send(cli, vn, rem):
     return "false"
 
 
-def handle_thumb_extract(abspath, **kwargs):
-    f = None
-    try:
-        f = PkgFile(abspath)
-        res = f.get_cover_location()
-        if res is None:
-            return None
-        offset, length = res
-        return 'png', f, offset, 0, length
-    except Exception as e:
-        if f:
-            f.close()
-        raise e
+def can_send(uname):
+    allow_authorized = False
+    users = []
+    for user in SEND_USERS:
+        if user == '*':             # anyone allowed, default
+            return True
+        if user == '@':             # only authorized allowd
+            allow_authorized = True
+        if user == uname:           # explicitly allowed
+            return True
+        if user == '-' + uname:     # forbidden
+            return False
+    return allow_authorized and uname != '*'
 
-def handle_cover(cli, vn, rem):
-    if not is_ps4(cli) and not REQUIRED_PERMISSIONS.can_access(cli.uname, vn, rem):
-        cli.tx_404(is_403=True)
-        return 'false'
 
-    with PkgFile(vn.canonical(rem)) as pkg:
-        image = pkg.extract_cover_image()
+def fill_template(content_id, content_url, content_name, icon_url, package_type, package_size):
+    p = bytearray(PAYLOAD_TEMPLATE)
+    items = [
+        (content_id, PAYLOAD_CONTENT_ID_START, PAYLOAD_CONTENT_ID_SIZE),
+        (content_url, PAYLOAD_CONTENT_URL_START, PAYLOAD_CONTENT_URL_SIZE),
+        (content_name, PAYLOAD_CONTENT_NAME_START, PAYLOAD_CONTENT_NAME_SIZE),
+        (icon_url, PAYLOAD_ICON_URL_START, PAYLOAD_ICON_URL_SIZE),
+        (package_type, PAYLOAD_PACKAGE_TYPE_START, PAYLOAD_PACKAGE_TYPE_SIZE),
+    ]
+    for value, start, maxsize in items:
+        value = bytes(value, 'utf-8', 'replace')[:maxsize - 1] + b'\0'
+        p[start:start+len(value)] = value
 
-    if image is None:
-        cli.tx_404()
-        return 'false'
+    package_size = package_size.to_bytes(8, "little")
+    package_size = package_size[:PAYLOAD_PACKAGE_SIZE_SIZE]
+    p[PAYLOAD_PACKAGE_SIZE_START:PAYLOAD_PACKAGE_SIZE_START+len(package_size)]
+    return p
 
-    cli.reply(image, 200, 'image/png')
+###### /FPKG and payload sender ######
+
+
+
+###### Special download path ######
+
+def handle_download(cli, vn, rem):
+    """
+    special url path for PS4 to download packages
+    allows special handling of PS4_IP
+
+    this exists for two reasons:
+    - to bypass copyparty's filekeys (I could do something smarter but why) (my PS4 didn't like urls with `?k=123456` query, maybe I just didn't try hard enough)
+    - to allow easy access to all pkg files with basic setup (just put in handlers and you can send any pkg)
+    see https://github.com/9001/copyparty/issues/1619
+    """
+    print("HANDLE_DOWNLOAD")
+    print(f"{is_ps4(cli)=}")
+    print(f"{rem.lower().endswith('.pkg')=}")
+    print(f"{vn.canonical(rem)=}")
+    if not is_ps4(cli) or not rem.lower().endswith('.pkg'):
+        return ''
+    cli.tx_file('oh_g', vn.canonical(rem))
     return 'false'
 
+###### /Special download path ######
+
+
+###### FPKGi server ######
 
 def handle_json(cli, vn, category):
+    """
+    serve FPKGi JSON files to install stored games/apps from ItsJokerZz's FPKGi app
+
+    https://github.com/ItsJokerZz/FPKGi
+    """
     cached = Cache(cli.uname, cli.ip, vn.vpath)
     packages = cached.data
     if packages is None:
@@ -330,12 +390,12 @@ def handle_json(cli, vn, category):
 
 
 def get_all_packages(cli, vn):
-    base_url = get_base_url(cli)
+    base_url = get_base_url(cli, bauth=True)
     dl_prefix = DOWNLOAD_PREFIX if is_ps4(cli) else ''
 
     # bypass permission check for main PS4 in basic setup when there is no dedicated PS4 account (low performance, zero setup)
     # otherwise return packages based on permissions (e.g. user can exclude some dirs from serving to FPKGi)
-    perms = PermSet(Permission()) if cli.uname == '*' and is_ps4(cli) else REQUIRED_PERMISSIONS
+    perms = YOLO_PERMISSIONS if cli.uname == '*' and is_ps4(cli) else ACCESS_PERMISSIONS
     packages = {}
     vols = {
         vp: vfs
@@ -413,10 +473,6 @@ class Cache:
     def is_valid(self):
         return self.cached_at >= dt.datetime.now() - dt.timedelta(seconds=10)
 
-###### /Main logic ######
-
-
-###### PKG to FPKGi data conversion ######
 
 REGIONS = {
     'U': 'USA',
@@ -524,18 +580,66 @@ class Category(object):
         else:
             self.title_prefix = self._TITLE_PREFIX.get(self.fpkgi_category, self.fpkgi_category)
 
-###### /PKG to FPKGi data conversion ######
+###### /FPKGi server ######
 
 
-###### Copyparty stuff ######
+###### Common utils ######
 
-def get_base_url(cli, bauth=True):
-    protocol = "https" if cli.is_https else "http"
+_ipnorm = None
+def is_ps4(cli):
+    global _ipnorm
+    if not _ipnorm:
+        module = sys.modules.get(cli.__class__.__module__)
+        _ipnorm = getattr(module, 'ipnorm', lambda x: x)
+    return _ipnorm(cli.ip) == _ipnorm(PS4_IP)
+
+
+def ndp(dpath):
+    """
+    normalize directory path
+    if it is root path ('' or '/') it must be ''
+    otherwise:
+    directory path should not start with '/'
+    directory path should end with '/'
+    so concatenating dir1 + dir2 + dir3 is predictable:
+    - directories are separated by '/'
+    - no '/' repeated
+    """
+    dpath = dpath.strip('/')
+    return dpath + '/' if dpath else dpath
+
+
+def nfp(fpath):
+    """
+    normalize file path
+    file path should not start nor end with '/'
+    so concatenating dir1 + dir2 + file3 is predictable:
+    - directories and files are separated by '/'
+    - no '/' repeated
+    """
+    return fpath.strip('/')
+
+
+def urlpath(dirs, fp=None, *suf):
+    path = ''.join(ndp(dir) for dir in dirs)
+    if fp is not None:
+        path += nfp(fp) + ''.join(suf)
+    return quote(path)
+
+
+def get_base_url(cli, *, bauth=False, swaphost=False):
+    if swaphost and CP_HOST:
+        protocol, host = CP_HOST
+    else:
+        protocol = "https" if cli.is_https else "http"
+        host = cli.host
+
     basic_auth=''
     if bauth and (cli.uname != '*' or cli.pw):
         basic_auth = f'{cli.uname}:{cli.pw}@'
-    return f"{protocol}://{basic_auth}{cli.host}{cli.args.SRS}"
     
+    return f"{protocol}://{basic_auth}{host}{cli.args.SRS}"
+
 
 permission_fields = ('read', 'write', 'move', 'delete', 'get', 'upget', 'html', 'admin', 'dot')
 Permission = namedtuple('Permission', permission_fields, defaults=(False,) * len(permission_fields))
@@ -562,20 +666,28 @@ class PermSet(object):
 
 
 # any of r/g/G/h is fine
-REQUIRED_PERMISSIONS = PermSet(
+ACCESS_PERMISSIONS = PermSet(
     Permission(read=True),
     Permission(get=True),
     Permission(upget=True),
     Permission(html=True),
 )
 SEND_PERMISSIONS = PermSet(Permission(read=True))
+YOLO_PERMISSIONS = PermSet(Permission())
 
-###### /Copyparty stuff ######
+###### /Common utils ######
 
 
 ###### FPKG stuff ######
 
 class PkgFile(object):
+    """
+    this almost-file-like class extracts data from FPKG files
+    based on psdevwiki and some other code (can't remember, probably maxton's LibOrbisPkg)
+
+    https://www.psdevwiki.com/ps4/PKG_files
+    """
+
     ENTRY_ID_PARAM_SFO = 0x1000
     ENTRY_ID_ICON0_PNG = 0x1200
     ENTRY_ID_PIC0_PNG = 0x1220
@@ -587,13 +699,13 @@ class PkgFile(object):
     REQUIRED_PARAMS = {'TITLE_ID', 'TITLE', 'CONTENT_ID', 'VERSION', 'APP_VER', 'SYSTEM_VER', 'CATEGORY', 'EMU_VERSION', 'CONTENT_VER'}
 
     def __init__(self, filepath: str | Path):
+        self.size = os.stat(filepath).st_size
         try:
             self.file = open(filepath, 'rb')
             # check PKG file magic
             if self.seek(0).read_uint_be() != 0x7F434E54:
                 raise Exception(f'Invalid PKG magic for file {filepath}')
             self.entries_locations = self._locate_entries()
-            self.size = os.stat(filepath).st_size
             self.is_valid = True
         except Exception as e:
             print(e)
@@ -737,3 +849,6 @@ class PkgFile(object):
 ###### /FPKG stuff ######
 
 
+if __name__ == '__main__':
+    # running as mtp – tag extractor
+    main()
