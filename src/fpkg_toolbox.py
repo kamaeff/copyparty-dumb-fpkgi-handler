@@ -38,6 +38,8 @@ PAYLOAD_ICON_URL_SIZE = 0x800
 PAYLOAD_PACKAGE_TYPE_SIZE = 0x15
 PAYLOAD_PACKAGE_SIZE_SIZE = 0x8
 
+TEXTPLAIN = 'text/plain; charset=utf-8'
+
 PS4_IP = os.getenv('FPKGTB_PS4_IP', '192.168.31.125')
 if not PS4_IP:
     raise Exception('Put your PS4 IP addres into environment variable FPKGTB_PS4_IP!')
@@ -48,6 +50,8 @@ if CP_HOST:
         raise Exception(f'Invalid FPKGTB_CP_HOST: {'://'.join(CP_HOST)}; valid examples: http://192.168.1.71:3923, https://party.mydomain.fun')
 
 SEND_USERS = os.getenv('FPKGTB_SEND_USERS', '*').replace(' ', '').split(',')
+# TODO: remove
+SEND_USERS = ['@']
 
 ###### Build stuff ######
 
@@ -291,7 +295,7 @@ def handle_send(cli, vn, rem):
         cli.reply(
             b'you are not allowed to send payloads and packages from this server',
             403,
-            'text/plain'
+            TEXTPLAIN
         )
         return 'false'
 
@@ -308,21 +312,25 @@ def handle_send(cli, vn, rem):
     is_payload = suffix == '.bin' or suffix == '.elf'
     
     if not is_payload and not is_pkg:
-        cli.reply(b'looks like it is not a .pkg, .bin or .elf file', 400, 'text/plain')
+        cli.reply(b'looks like it is not a .pkg, .bin or .elf file', 400, TEXTPLAIN)
         return "false"
-    
+
     if is_payload:
-        with socket.create_connection((PS4_IP, '9090')) as con:
-            with open(realpath, 'rb') as f:
-                con.sendfile(f)
-        cli.reply(b'sent', 200, 'text/plain')
-        time.sleep(0.4)
-        return "false"
+        try:
+            with socket.create_connection((PS4_IP, '9090')) as con:
+                with open(realpath, 'rb') as f:
+                    con.sendfile(f)
+            cli.reply(b'sent', 200, TEXTPLAIN)
+            time.sleep(0.4)
+            return 'false'
+        except Exception as e:
+            cli.reply(bytes(str(e), 'utf-8'), 400, TEXTPLAIN)
+            return 'false'
 
     with PkgFile(realpath) as pkg:
         if not pkg.is_valid:
-            cli.reply(b'invalid PKG file', 400, 'text/plain')
-            return("false")
+            cli.reply(b'invalid PKG file', 400, TEXTPLAIN)
+            return 'false'
         param_sfo = pkg.extract_param_sfo()
 
     base_url = get_base_url(cli, swaphost=True)
@@ -337,12 +345,16 @@ def handle_send(cli, vn, rem):
     cli.log(f'{params=}')
     if pkg.has_cover_image():
         params['icon_url'] = (base_url + urlpath([vn.vpath, COVER_VFS_PREFIX], rem, COVER_POSTFIX))
-    
-    with socket.create_connection((PS4_IP, '9090')) as con:
-        con.sendall(fill_template(**params))
-    cli.reply(b'sent', 200, 'text/plain')
-    time.sleep(0.4)
-    return "false"
+    try:
+        with socket.create_connection((PS4_IP, '9090')) as con:
+            con.sendall(fill_template(**params))
+            cli.reply(b'sent', 200, TEXTPLAIN)
+            time.sleep(0.4)
+            return 'false'
+    except Exception as e:
+        cli.reply(bytes(str(e), 'utf-8'), 400, TEXTPLAIN)
+        return 'false'
+
 
 
 def can_send(uname):

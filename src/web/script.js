@@ -5,12 +5,12 @@ addEventListener("DOMContentLoaded", async function() {
 
 
     ////// initial setup: file list {
-    // set 'install' buttons on initial page load
+    // set 'send' buttons on initial page load
     let PKGFILES = getPkgFiles();
     for (const f of PKGFILES) {
-        updateLead(f, 'install');
+        updateLead(f, 'send');
     }
-    // hook into gentab to set up 'install' buttons during navigation
+    // hook into gentab to set up 'send' buttons during navigation
     const origgentab = treectl.gentab;
     treectl.gentab = function(top, res) {
         const ret = origgentab(top, res);
@@ -18,7 +18,7 @@ addEventListener("DOMContentLoaded", async function() {
         console.log('gentab called');
         console.debug(PKGFILES);
         for (const f of PKGFILES) {
-            updateLead(f, 'install');
+            updateLead(f, 'send');
         }
         return ret;
     }
@@ -28,30 +28,30 @@ addEventListener("DOMContentLoaded", async function() {
     ////// file grid: right click menu {
     let mItem = document.createElement('a');
     mItem.id = "rfpkgi";
-    mItem.textContent = 'install';
+    mItem.textContent = 'send';
     mItem.setAttribute('href', '#');
     mItem.onclick = function(e) {
         ev(e);
         console.log(this.file);
         modal.confirm(
-            `<h4>install package</h4>\n${this.file.name}`,
+            `<h4>send package</h4>\n${this.file.name}`,
             () => { fetchMany([this.file]); },
             null
         );
     }
     let mItemMany = document.createElement('a');
     mItemMany.id = "rfpkgi-many";
-    mItemMany.textContent = 'install selected';
+    mItemMany.textContent = 'send selected';
     mItemMany.setAttribute('href', '#');
 
     let mItemAll = document.createElement('a');
     mItemAll.id = "rfpkgi-all";
-    mItemAll.textContent = 'install all';
+    mItemAll.textContent = 'send all';
     mItemAll.setAttribute('href', '#');
 
     mItemMany.onclick = mItemAll.onclick = function(e) {
         ev(e);
-        const message = `<h4>install (${this.files.length}) packages?</h4>\n`
+        const message = `<h4>send (${this.files.length}) packages?</h4>\n`
                       + this.files.map(s => s.name).join('\n');
         modal.confirm(
             message,
@@ -77,7 +77,7 @@ addEventListener("DOMContentLoaded", async function() {
             return origrcm(e);
         }
         mItemAll.files = PKGFILES;
-        mItemAll.textContent = `install all (${PKGFILES.length})`;
+        mItemAll.textContent = `send all (${PKGFILES.length})`;
         mItemAll.classList.remove('hide');
 
         const fid = thegrid.en
@@ -94,7 +94,7 @@ addEventListener("DOMContentLoaded", async function() {
         const selectedFids = msel.getsel().map(f => f.id);
         const selected = PKGFILES.filter(f => selectedFids.includes(f.id));
         mItemMany.files = selected;
-        mItemMany.textContent = `install selected (${selected.length})`;
+        mItemMany.textContent = `send selected (${selected.length})`;
         if (selected.length > 1) {
             mItemMany.classList.remove('hide');
         } else {
@@ -120,8 +120,8 @@ addEventListener("DOMContentLoaded", async function() {
         link.textContent = toState;
         link.classList.add('fpkg-handled');
         const children = [link];
-        // install, approve, waiting, fail, success
-        if (toState == 'install') {
+        // send, approve, waiting, fail, success
+        if (toState == 'send') {
             link.style.color = '#2766c4f8';
         }
         else if (toState == 'surenope') {
@@ -136,7 +136,7 @@ addEventListener("DOMContentLoaded", async function() {
         else if (toState == '...') {
             link.style.color = 'var(--a-gray)';
         }
-        else if (toState == 'failed') {
+        else if (toState == 'fail') {
             link.style.color = '#C42727f8';
         }
         else if (toState == 'sent') {
@@ -151,12 +151,12 @@ addEventListener("DOMContentLoaded", async function() {
         const text = e.target.textContent;
         const fid = e.target.getAttribute('ref');
         const file = PKGFILES.find(f => f.id == fid);
-        if (text == "install") {
-            updateLead(file, "surenope");
-        } else if (text == "sure") {
+        if (text == 'send') {
+            updateLead(file, 'surenope');
+        } else if (text == 'sure') {
             fetchMany([file]);
-        } else if (text == "nope" || text == "failed") {
-            updateLead(file, "install");
+        } else if (text == 'nope' || text == 'fail') {
+            updateLead(file, 'send');
         }
     }
     ////// }
@@ -164,38 +164,38 @@ addEventListener("DOMContentLoaded", async function() {
 
     ////// sending requests to the server {
     async function doFetch(file) {
-        updateLead(file, "...");
+        updateLead(file, '...');
+        // TODO: do we have to send it to / and not to current volume?
+        // probably yes
+        // but another option is to test each level
+        // or to send volumes info from the server initially
         let url = SR + '/__fpkgtb/sender' + file.href;
-        // TODO: this approach doesn't work with sceBgft
-        // if (file.k) {
-        //     url += `?k=${file.k}`
-        // }
         const name = file.name;
-        const ret = {success: null, message: '', file};
+        const ret = {success: false, message: '', file};
         try {
             const res = await fetch(url, {
                 method: 'GET',
                 signal: AbortSignal.timeout(3000),
             });
             const body = (await res.text()).trim();
-            // TODO: handle response code and print message only if text/plain
-            // But maybe I don't need it
-            if (!body) {
-                ret.success = false;
-                ret.message = `empty response body from the server\nprobably some other handlers are enabled`;
+            const hasText = body && res.headers.get('Content-Type').startsWith('text/plain');
+            if (res.status != 200){
+                ret.message = hasText
+                            ? `error from server\n${body}`
+                            : `HTTP ${res.status} ${res.statusText}`
+            } else if (!body) {
+                ret.message = `empty response body from server\nprobably some other handlers are enabled`;
             } else if (body != 'sent') {
-                ret.success = false;
-                ret.message = `error from server:\n${body}`;
+                ret.message = `unexpected response from server:\n${body}`;
             } else {
                 ret.success = true;
                 ret.message = 'sent to the playstation';
             }
         } catch (err) {
-            ret.success = false;
             ret.message = `${err.message}: ${err.cause?.message}`;
         }
 
-        updateLead(file, ret.success ? 'sent' : 'failed');
+        updateLead(file, ret.success ? 'sent' : 'fail');
         return ret;
     }
 
@@ -222,8 +222,8 @@ addEventListener("DOMContentLoaded", async function() {
         const success = (ps.sent.length && !ps.failed.length);
 
         messages.push(success
-            ? `<h4>FPKG install: successfully sent ${ps.sent.length}/${files.length} packages</h4>`
-            : `<h4>FPKG install: failed to send ${ps.failed.length}/${files.length} packages</h4>`
+            ? `<h4>FPKG send: successfully sent ${ps.sent.length}/${files.length} packages</h4>`
+            : `<h4>FPKG send: failed to send ${ps.failed.length}/${files.length} packages</h4>`
         );
         for (const p of ps.failed) {
             messages.push(`😐 <strong>${p.file.name}</strong>`);
@@ -278,7 +278,6 @@ addEventListener("DOMContentLoaded", async function() {
                 id: mselfile.id,
                 name: deUri(nameUri),
                 href,
-                k: /(?:^|&)k=(?<k>[^&]+)/.exec(query)?.groups?.k
             })
         }
         return ret

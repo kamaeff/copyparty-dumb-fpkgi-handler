@@ -1,11 +1,11 @@
-/* css trick to show 'install' lead button immediately before scripts are even loaded */
+/* css trick to show 'send' lead button immediately before scripts are even loaded */
 /* '$=' for normal links and '*=' for links with filekeys */
 #files tbody tr:has(td:nth-child(2) a[href$=".pkg"i],a[href*=".pkg?"i],a[href$=".bin"i],a[href*=".bin?"i],a[href$=".elf"i],a[href*=".elf?"i]) td:first-child a:not(.fpkg-handled) {
     font-size: 0px;
 }
 
 #files tbody tr:has(td:nth-child(2) a[href$=".pkg"i],a[href*=".pkg?"i],a[href$=".bin"i],a[href*=".bin?"i],a[href$=".elf"i],a[href*=".elf?"i]) td:first-child a:not(.fpkg-handled)::before {
-    content: "install";
+    content: "send";
     font-size: initial;
     color: #2766c4f8;
     display: inline;
