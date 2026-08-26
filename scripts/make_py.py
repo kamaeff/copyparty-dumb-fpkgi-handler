@@ -14,7 +14,7 @@ def cssmin(s):
     return re.sub(r'(?:\s|/\*.*?\*/)+', ' ', s).replace(': ', ':').replace('; ', ';').strip()
 
 
-with open('src/fpkg_toolbox.py', 'rt') as py_f:
+with open('src/fpkg_vault.py', 'rt') as py_f:
     py_s = py_f.read()
 
 with open('build/payload.bin', 'rb') as payload_f:
@@ -46,7 +46,7 @@ py_s = py_s.replace('\nSTYLE_CSS = None', '\nSTYLE_CSS = ' + repr(bytes(cssmin(c
 
 py_s = py_s.replace('\nSCRIPT_JS = None', '\nSCRIPT_JS = ' + repr(bytes(jsmin(js_s), 'utf8')), count=1)
 
-with open('build/fpkg_toolbox.py', 'wt') as out:
+with open('build/fpkg_vault.py', 'wt') as out:
     out.write(py_s)
-os.chmod('build/fpkg_toolbox.py', 0o755)
-print('built build/fpkg_toolbox.py')
+os.chmod('build/fpkg_vault.py', 0o755)
+print('built build/fpkg_vault.py')

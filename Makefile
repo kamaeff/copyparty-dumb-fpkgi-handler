@@ -1,17 +1,17 @@
 REMOTE_HOST := builder@build-server
-REMOTE_DIR := builds/copyparty-fpkg-toolbox
+REMOTE_DIR := builds/copyparty-fpkg-vault
 
 s_payload := src/payload
 s_sdk := $(s_payload)/sdk
 s_lib := $(s_sdk)/lib
-s_py := src/fpkg_toolbox.py
+s_py := src/fpkg_vault.py
 s_css := src/web/style.css
 s_js := src/web/script.js
 
 t_lib := build/lib.a
 t_elf := build/payload.elf
 t_bin := build/payload.bin
-t_py := build/fpkg_toolbox.py
+t_py := build/fpkg_vault.py
 
 all: $(t_py)
 

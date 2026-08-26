@@ -194,11 +194,11 @@ def main(*args, **kwargs):
 
     if rem == SCRIPT_VFS_PATH:
         cli.reply(SCRIPT_JS, 200, "text/javascript")
-        return 'false'
+        return 'true'
 
     if rem == STYLE_VFS_PATH:
         cli.reply(STYLE_CSS, 200, "text/css")
-        return 'false'
+        return 'true'
 
     if rem.startswith(COVER_VFS_PREFIX):
         return handle_cover(cli, vn, rem[len(COVER_VFS_PREFIX):-len(COVER_POSTFIX)])
@@ -347,10 +347,10 @@ def handle_cover(cli, vn, rem):
 
     if image is None:
         cli.tx_404()
-        return 'false'
+        return 'true'
 
     cli.reply(image, 200, 'image/png')
-    return 'false'
+    return 'true'
 
 ###### /Cover image ######
 
@@ -382,7 +382,7 @@ def handle_send(cli, vn, rem):
             400 if SEND_NO_403 else 403,
             TEXTPLAIN
         )
-        return 'false'
+        return 'true'
 
     realpath = Path(vn.realpath, rem).resolve()
     if not realpath.is_file():
@@ -402,15 +402,15 @@ def handle_send(cli, vn, rem):
                     con.sendfile(f)
             cli.reply(b'sent', 200, TEXTPLAIN)
             time.sleep(0.4)
-            return 'false'
+            return 'true'
         except Exception as e:
             cli.reply(bytes(str(e), 'utf-8'), 400, TEXTPLAIN)
-            return 'false'
+            return 'true'
 
     with PkgFile(realpath) as pkg:
         if not pkg.is_valid:
             cli.reply(b'invalid PKG file', 400, TEXTPLAIN)
-            return 'false'
+            return 'true'
         param_sfo = pkg.extract_param_sfo()
 
     base_url = get_base_url(cli, swaphost=True)
@@ -430,10 +430,10 @@ def handle_send(cli, vn, rem):
             con.sendall(fill_template(**params))
             cli.reply(b'sent', 200, TEXTPLAIN)
             time.sleep(0.4)
-            return 'false'
+            return 'true'
     except Exception as e:
         cli.reply(bytes(str(e), 'utf-8'), 400, TEXTPLAIN)
-        return 'false'
+        return 'true'
 
 
 def can_send(cli, vn, rem):
@@ -561,7 +561,7 @@ def handle_json(cli, vn, category):
     response_body = json.dumps({"DATA": packages}).encode("utf-8")
 
     cli.reply(response_body, 200, "application/json")
-    return 'false'
+    return 'true'
 
 
 def get_all_packages(cli, vn):
