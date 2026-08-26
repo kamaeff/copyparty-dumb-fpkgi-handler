@@ -1,31 +1,3 @@
-
-### Maintenance notice
-
-Starting from 2026-08-18 the repo is under maintenance. Big update is coming, but files in the master branch may be broken during that stage.
-If you need a working version, just grab it from the changelog below.
-
-
-#### Run dependencies
-Dependencies are optional:
-- Pillow and/or ffmpeg and/or pyvips – for thumbnails in copyparty web ui
-- Mutagen and/or ffprobe – for metadata extraction
-
-Pillow and mutagen are faster and safer than ffmpeg, but provide little less capabilities.
-IMO easiest way to make sure everything works is to use copyparty docker images.
-
-#### Build requirements
-- x86_64 machine
-- gcc
-- yasm
-- python, optional:rjsmin
-
-e.g.: alpine; apk add: make gcc yasm file; py3-rjsmin; openrc openssh;
-
-run requirements:
-- python
-- e2d, e2ts, ffmpeg with jxl/webp support OR mutagen + PIL/VIPS,
-
-
 # fpkg-vault
 A set of plugins for [copyparty](https://github.com/9001/copyparty) for managing and installing playstation4 homebrew apps and games (`.pkg`) and payloads(`.bin`, `.elf`).
 
@@ -317,7 +289,29 @@ or if you don't care at all:
     }
 ```
 
+### Build from source
+Build requirements are:
+- x86_64 machine
+- python3
+- python3-rjsmin(optional)
+- gcc
+- yasm
+- make
+
+to build, run:
+```bash
+make
+```
+
+
 ### Changelog
+- [2026-08-27](https://github.com/kamaeff/fpkg-vault/tree/7da3b52deb4353da10cb1bc4ed44847c7fdda400)
+    - renamed project: copyparty-dumb-fpkgi-handler -> fpkg-vault
+    - changed license: UNLICENSE -> AGPLv3
+    - added thumbnail extractor
+    - added tagging plugin
+    - added fpkg and payload sender
+    - first github release
 - [2026-05-03](https://github.com/kamaeff/copyparty-dumb-fpkgi-handler/tree/652c295d46c416710bc240bf7664bacb74e19f74):
     - Now it servers PKG's metadata: Title IDs, Title Names, Regions, Categories, Versions, Required FW versions and Cover Images
     - Now it also respects copyparty's VFS and permissions.
