@@ -19,17 +19,11 @@ import struct
 
 
 # TODO: DON'T FORGET HOW FILEKEYS ARE HANDLED BEFORE I WRITE IT DOWN
-# TODO: REVIEW ALL THE tx404, tx403, return "true", return "false", return "" ONE MORE TIME
-# TODO: REVIEW ALL THE is_ps4() and cli.uname == '*' and rem.lower().endswith('.pkg') combinations; maybe introduce some functionss
-# TODO: REMOVE DEFUALT PS4_IP VALUE
 # TODO: RENAME EVERYTHING TB -> V
-# TODO: JS; IT'S STILL DIRTY
-# TODO: TEST CP_HOST
-# TODO: TEST SEND_USERS
 # TODO: TEST DEMO RUN (also with no deps e.g. on clean alpine)
-# TODO: REMOVE OR CONFIGURE BASIC AUTH FOR FPKGI SERVER
-# TODO: ADD SECONDARY PS4 IP ADDRESSES TO ENABLE SAME ACCESS LEVEL FOR FPKGI FOR DIFFERENT CONSOLES??? gh issue
-# TODO: ADD MAPPING UNAME:PS4IP??? just create gh issue and do it if someone uses this software and thinks they need this feature
+# TODO: RETEST WITH ipu/ipr FOR PS4 IP
+# TODO: SHARE CACHE BETWEEN USERS BY ABSPATH: DON'T OPEN AND READ A FILE IF ITS DATA ALREADY CACHED
+# TODO: allow multiple consoles in sender web ui with separate permission rules for each
 
 PAYLOAD_CONTENT_ID_SIZE = 0x30
 PAYLOAD_CONTENT_URL_SIZE = 0x800
@@ -40,18 +34,95 @@ PAYLOAD_PACKAGE_SIZE_SIZE = 0x8
 
 TEXTPLAIN = 'text/plain; charset=utf-8'
 
-PS4_IP = os.getenv('FPKGTB_PS4_IP', '192.168.31.125')
-if not PS4_IP:
-    raise Exception('Put your PS4 IP addres into environment variable FPKGTB_PS4_IP!')
-CP_HOST = os.getenv('FPKGTB_CP_HOST')
+# Comma-separated list of LAN IP addresses of yuor PS4 consoles
+# The first address from the list is used by sender to send payloads to
+# All the other IP addresses get privileged access to FPKGi JSON files
+# Privileged access includes:
+# - console can get any PKG file or PKG cover image on server by direct url
+# - when requesting FPKGi json files, the console gets list of all PKG files on server regardless of permissions
+#
+# To limit what packages are available to the console in FPKGi you can authenticate it
+# with copyparty options --ipu and optionally --ipr, eg:
+# --ipu 192.168.1.125/32=ps4_living_room
+# --ipr 192.168.1.125/32=ps4_living_room
+# where '192.168.1.125' is the console's IP address
+# and 'ps4_living_room' is the copyparty username to force authentication with;
+# after this you can set 'ps4_living_room' user permissions in copyparty config:
+# https://github.com/9001/copyparty/tree/hovudstraum#accounts-and-volumes
+#
+# The privilege to get any PKG file or PKG cover image on server by direct url is
+# required to allow different users to send packages to PS4 with zero permissions setup
+# If you want the PS4 to fully obey copyparty's permissions settings, in addition to
+# previously mentioned --ipu, set the environment variable FPKGV_RESTRICT_PS4_ACCESS=true
+PS4_IPS = [ip for ip in os.getenv('FPKGV_PS4_IP').replace(' ', '').split(',') if ip]
+if not PS4_IPS:
+    raise Exception('Put your PS4 IP address(es) into environment variable FPKGV_PS4_IP!')
+PS4_IP = PS4_IPS[0]
+
+# Set to 'true' to remove PS4_IP priveleged access and make it obey copyparty permission configuration
+RESTRICT_PS4_ACCESS = os.getenv('FPKGV_RESTRICT_PS4_ACCESS', '').strip().lower() in {'true', '1'}
+
+# Who can send payloads and packages to the console.
+# Comma-separated list of usernames and group names allowed to send.
+# Group names start with '@'.
+# Prefix username or groupname with '-' to explicitly deny them send access.
+# There is a special group in copyparty, '@acct', which includes all authenticated users.
+# Use '*' to allow anyone to send packages.
+# Examples:
+# - '*' – anyone allowed to send packages (default)
+# - '@acct' – allow any authenticated users to send packages
+# - 'miles,tony' – only allow miles and tony to send packages
+# - '@acct,-alex' – allow any authenticated user to send packages, except alex
+# - '@home,-@kids' – allow users from group 'home' to send packages, but exclude users from group 'kids'
+# - '@acct,-@adults' – kids revenge! allow any authenticated user to send packages, but exclude users from group 'adults'
+#
+# Having 'read' access to a package file is the baseline requirement to send it.
+# You can make that requirement stricter by adding  '#' followed by any combination of letters 'wmda' to require additional access levels:
+# - w – also require 'write' access to the file to be able to send it
+# - m – also require 'move' permission
+# - d – also require 'delete' permission
+# - a – also require 'admin' permission
+#
+# examples:
+# - '#wmd,*' – anyone can send packages they have 'read' (baseline), 'write', 'move' and 'delete' access to at the same time
+# - '#wmd,#wa,*' – require either 'read,write,move,delete' or 'read,write,admin' permission level
+# – '#wa,@acct,-jane' – any authenticated user (except jane) can send a package if they have at the same time 'read' (baseline), 'write' and 'admin' access to it
+#
+# note that 'deny' rules always take precedence, so if you have '@home,-@kids,alex' and alex is in group 'kids', then alex will not be able to send packages because he is excluded by '-@kids' rule
+SEND_USERS = os.getenv('FPKGV_SEND_USERS', '*').replace(' ', '').split(',')
+
+
+# LAN address of your copyparty instance.
+# When you 'send PKG' to the playstation, you actually send a tiny payload
+# That payload tells the PS4 where to grab an actual PKG file from
+# If you specify the FPKGV_CP_HOST then the payload will contain links to that host
+# otherwise the host copyparty is accessed by (e.g. address in your browser address line) will be used
+#
+# useful in cases:
+# - you access copyparty externally (e.g. https://party.mycool.name served via cloudflare tunnels)
+#   and asking the PS4 to download packages over the internet is inefficient;
+#   in that case you can set FPKGV_CP_HOST='http://192.168.1.227:3923'
+#   and PS4 will go to local address http://192.168.1.227:3923 instead of external https://party.mycool.name
+# - you run copyparty on your main computer and access it with 'http://127.0.0.1:3923'
+#   in that case sending payloads with that host will lead to that PS4 can't download anything
+#
+# if you only access copyparty by LAN address then FPKGV_CP_HOST is optional
+CP_HOST = os.getenv('FPKGV_CP_HOST')
 if CP_HOST:
     CP_HOST = CP_HOST.rstrip('/').split('://')
     if len(CP_HOST) != 2:
-        raise Exception(f'Invalid FPKGTB_CP_HOST: {'://'.join(CP_HOST)}; valid examples: http://192.168.1.71:3923, https://party.mydomain.fun')
+        raise Exception(f'Invalid FPKGV_CP_HOST: {'://'.join(CP_HOST)}; valid examples: http://192.168.1.71:3923, https://party.mydomain.fun')
 
-SEND_USERS = os.getenv('FPKGTB_SEND_USERS', '*').replace(' ', '').split(',')
-# TODO: remove
-SEND_USERS = ['@']
+# Don't respond with HTTP status 403 to users who try to click 'send' in the browser
+# while having no permissions to send
+# Send HTTP status 400 instead
+#
+# The only actual reason this exists is that I host a public demo of this software
+# and I'm too lazy to remember and relearn all the crowdsec and Coraza config files
+# and expression languages to allow curious people to click these buttons
+# and don't automatically ban them for too many 403s
+SEND_NO_403 = os.getenv('FPKGV_SEND_NO_403', '').strip().lower() in {'true', '1'}
+
 
 ###### Build stuff ######
 
@@ -77,7 +148,7 @@ assert STYLE_CSS is not None
 
 ###### Dispatching ######
 
-COMMON_VFS_PREFIX = '__fpkgtb/'
+COMMON_VFS_PREFIX = '__fpkgv/'
 SCRIPT_VFS_PATH = COMMON_VFS_PREFIX + 'script.js'
 STYLE_VFS_PATH = COMMON_VFS_PREFIX + 'style.css'
 COVER_VFS_PREFIX = COMMON_VFS_PREFIX + 'cover/'
@@ -86,7 +157,7 @@ DOWNLOAD_PREFIX = COMMON_VFS_PREFIX + 'dl/'
 COVER_POSTFIX = '.png'
 JSON_VFS_PATH_PATTERN = re.compile(rf'^{COMMON_VFS_PREFIX}(?:all|(?P<category>DLC|games|apps|PS2|updates|homebrew)).json$')
 
-
+groups = None
 def main(*args, **kwargs):
     # called as thumb extractor
     if len(args) == 1 and isinstance(args[0], str) and kwargs:
@@ -116,6 +187,9 @@ def main(*args, **kwargs):
     if not rem.startswith(COMMON_VFS_PREFIX):
         if cli.vpath in ' /':
             return 'home'
+        return ''
+
+    if vn.shr_src is not None:
         return ''
 
     if rem == SCRIPT_VFS_PATH:
@@ -148,29 +222,29 @@ def handle_demo_run():
         print('File "copyparty-sfx.py" not found!', file=sys.stderr)
         exit(1)
     if not CP_HOST:
-        print('For this demo run please set environment variable FPKGTB_CP_HOST to http://<your-local-ip>:3923', file=sys.stderr)
+        print('For this demo run please set environment variable FPKGV_CP_HOST to http://<your-computer-local-ip>:3923', file=sys.stderr)
         exit(1)
     try:
         os.chmod('./copyparty-sfx.py', 0o755)
-        os.chmod('./fpkg_toolbox.py', 0o755)
+        os.chmod('./fpkg_vault.py', 0o755)
 
-        os.execve(
-            './copyparty-sfx.py',
-            [
-                '-e2dsa', '-e2ts', '-no-crt', '--http-only', '--ansi',
-                '--name', 'fpkg-vault',
+        os.execl(
+            '/usr/bin/env', 'python3', './copyparty-sfx.py',
 
-            #    '--th-extr-cv',    # hopefully it gets merged soon
-                '--th-extract', 'pkg=./fpkg_toolbox.py',
-                '--on404', './fpkg_toolbox.py',
-                '--on403', './fpkg_toolbox.py',
-                '--js-browser', '/__fpkgtb/script.js',
-                '--css-browser', '/__fpkgtb/style.css',
+            '-e2dsa', '-e2tsr', '--no-crt', '--http-only', '--ansi',
+            '--name', 'fpkg-vault',
 
-                '-mtp', 'type,category,title,title_id,content_id,app_ver,version,system_ver=an,epkg,ePKG,c1,f,./fpkg_toolbox.py',
-                '-mte', '+type,category,title,title_id,content_id,app_ver,version,system_ver',
-            ],
-            os.environ
+        #    '--th-extr-cv',    # hopefully it gets merged soon
+            '--th-extract', 'pkg=./fpkg_vault.py',
+            '--th-no-jxl',      # prefer webp and pil
+            '--on404', './fpkg_vault.py',
+            '--on403', './fpkg_vault.py',
+            '--js-browser', '/__fpkgv/script.js',
+            '--css-browser', '/__fpkgv/style.css',
+
+            '--no-mtag-ff',    # prefer mutagen
+            '-mte', '+type,category,title,title_id,content_id,app_ver,version,system_ver',
+            '-mtp', 'type,category,title,title_id,content_id,app_ver,version,system_ver=an,epkg,c1,f,./fpkg_vault.py',
         )
     except Exception as e:
         print('Failed to run copyparty from demo run script\n\n', file=sys.stderr)
@@ -185,7 +259,7 @@ def handle_mtag(path: Path):
     copyparty options:
         -e2dsa
         -e2ts
-        -mtp type,category,title,title_id,content_id,app_ver,version,system_ver=an,epkg,c1,f,./fpkg_toolbox.py
+        -mtp type,category,title,title_id,content_id,app_ver,version,system_ver=an,epkg,c1,f,./fpkg_vault.py
         -mte +type,category,title,title_id,content_id,app_ver,version,system_ver
 
     https://github.com/9001/copyparty#file-parser-plugins
@@ -238,7 +312,7 @@ def handle_thumb_extract(abspath, **kwargs):
     cover images for copyparty web ui
     ffmpeg (wtih jxl or webp support) or PIL or VIPS needed
     copyparty options:
-        --th-extract pkg=./fpkg-toolbox.py
+        --th-extract pkg=./fpkg_vault.py
 
     https://copyparty.eu/cli/#thumb-ex-help-page
     """
@@ -260,12 +334,13 @@ def handle_cover(cli, vn, rem):
     """
     cover images by url for fpkgi server and fpkg sender
     copyparty options:
-        --on404 ./fpkg_toolbox.py
-        --on403 ./fpkg_toolbox.py
+        --on404 ./fpkg_vault.py
+        --on403 ./fpkg_vault.py
     """
-    if not is_ps4(cli) and not ACCESS_PERMISSIONS.can_access(cli.uname, vn, rem):
-        cli.tx_404(is_403=True)
-        return 'false'
+    can_access = is_ps4(cli) or ACCESS_PERMISSIONS.can_access(cli.uname, vn, rem)
+    is_pkg = rem[-4:].lower() == '.pkg'
+    if (not can_access or not is_pkg):
+        return ''
 
     with PkgFile(vn.canonical(rem)) as pkg:
         image = pkg.extract_cover_image()
@@ -288,32 +363,37 @@ def handle_send(cli, vn, rem):
     for FPKG: generate installation payload and send it
 
     copyparty options:
-        --on404 ./fpkg_toolbox.py
-        --on403 ./fpkg_toolbox.py
+        --on404 ./fpkg_vault.py
+        --on403 ./fpkg_vault.py
     """
-    if not can_send(cli.uname):
+    try:
+        can = can_send(cli, vn, rem)
+    except Exception as e:
+        cli.log(f'FPKGV bad config\n\t\t{e}')
         cli.reply(
-            b'you are not allowed to send payloads and packages from this server',
-            403,
+            b'bad configuration; see server log',
+            500,
+            TEXTPLAIN
+        )
+        return 'false'
+    if not can:
+        cli.reply(
+            b'you are not allowed to send this package/payload',
+            400 if SEND_NO_403 else 403,
             TEXTPLAIN
         )
         return 'false'
 
-    if not SEND_PERMISSIONS.can_access(cli.uname, vn, rem):
-        cli.tx_404(is_403=True)
-        return 'false'
-
     realpath = Path(vn.realpath, rem).resolve()
     if not realpath.is_file():
-        cli.tx_404()
-        return 'false'
+        return ''
     suffix = realpath.suffix.lower()
     is_pkg = suffix == '.pkg'
     is_payload = suffix == '.bin' or suffix == '.elf'
     
     if not is_payload and not is_pkg:
         cli.reply(b'looks like it is not a .pkg, .bin or .elf file', 400, TEXTPLAIN)
-        return "false"
+        return 'false'
 
     if is_payload:
         try:
@@ -356,20 +436,68 @@ def handle_send(cli, vn, rem):
         return 'false'
 
 
+def can_send(cli, vn, rem):
+    """
+    Check if current user has permissions to send packages to the PS4.
 
-def can_send(uname):
-    allow_authorized = False
-    users = []
-    for user in SEND_USERS:
-        if user == '*':             # anyone allowed, default
-            return True
-        if user == '@':             # only authorized allowd
-            allow_authorized = True
-        if user == uname:           # explicitly allowed
-            return True
-        if user == '-' + uname:     # forbidden
-            return False
-    return allow_authorized and uname != '*'
+    I would like to make all the rules stuff static and evaluated once
+    during import time;  but users, groups and volumes can be updated
+    dynamically in runtime, so it's safer to re-evaluate all this stuff
+    for each request.
+    """
+    uname = cli.uname
+    if not Perms(read=True).can_access(uname, vn, rem):
+        return False
+    groups = cli.asrv.grps
+    all_unames = groups[cli.args.grp_all]
+    msg = "Unknown or invalid {!s} {!r} in rule {!r} in FPKGV_SEND_USERS=" + repr(','.join(SEND_USERS))
+
+    anyone = False
+    allowed = set()
+    permissions = []
+    for rule in SEND_USERS:
+        if rule == '*':
+            anyone = True
+        elif rule.startswith('#'):
+            perm_kwargs = {}
+            for char in rule.lstrip('#'):
+                if char == 'w':
+                    perm_kwargs['write'] = True
+                elif char == 'm':
+                    perm_kwargs['move'] = True
+                elif char == 'd':
+                    perm_kwargs['delete'] = True
+                elif char == 'a':
+                    perm_kwargs['admin'] = True
+                else:
+                    raise Exception(msg.format('character', char, rule))
+            if perm_kwargs:
+                permissions.append(Permission(**perm_kwargs))
+        elif rule.startswith('-@'):
+            g = rule.lstrip('-@')
+            if g not in groups:
+                raise Exception(msg.format('group', g, rule))
+            if uname in groups[g]:
+                return False
+        elif rule.startswith('-'):
+            u = rule.lstrip('-')
+            if u not in all_unames:
+                raise Exception(msg.format('user', u, rule))
+            if uname == u:
+                return False
+        elif rule.startswith('@'):
+            g = rule.lstrip('@')
+            if g not in groups:
+                raise Exception(msg.format('group', g, rule))
+            allowed |= set(groups[g])
+        else:
+            if rule not in all_unames:
+                raise Exception(msg.format('user', rule, rule))
+            allowed.add(rule)
+
+    if permissions and not Perms(*permissions).can_access(uname, vn, rem):
+        return False
+    return anyone or uname in allowed
 
 
 def fill_template(content_id, content_url, content_name, icon_url, package_type, package_size):
@@ -393,7 +521,6 @@ def fill_template(content_id, content_url, content_name, icon_url, package_type,
 ###### /FPKG and payload sender ######
 
 
-
 ###### Special download path ######
 
 def handle_download(cli, vn, rem):
@@ -406,10 +533,6 @@ def handle_download(cli, vn, rem):
     - to allow easy access to all pkg files with basic setup (just put in handlers and you can send any pkg)
     see https://github.com/9001/copyparty/issues/1619
     """
-    print("HANDLE_DOWNLOAD")
-    print(f"{is_ps4(cli)=}")
-    print(f"{rem.lower().endswith('.pkg')=}")
-    print(f"{vn.canonical(rem)=}")
     if not is_ps4(cli) or not rem.lower().endswith('.pkg'):
         return ''
     cli.tx_file('oh_g', vn.canonical(rem))
@@ -452,9 +575,8 @@ def get_all_packages(cli, vn):
     vols = {
         vp: vfs
         for vp, vfs in cli.asrv.vfs.all_vols.items()
-        if vp.startswith(vn.vpath) and perms.can_access(cli.uname, vfs)
+        if vn.shr_src is None and vp.startswith(vn.vpath) and perms.can_access(cli.uname, vfs)
     }
-    print(f'VOLSVOLS {set(vols)=}')
     for vp2, vn2 in vols.items():
         print('\n\n')
         print(f'VFS {vp2=}')
@@ -639,11 +761,18 @@ class Category(object):
 
 _ipnorm = None
 def is_ps4(cli):
+    if RESTRICT_PS4_ACCESS:
+        return False
+
     global _ipnorm
     if not _ipnorm:
         module = sys.modules.get(cli.__class__.__module__)
         _ipnorm = getattr(module, 'ipnorm', lambda x: x)
-    return _ipnorm(cli.ip) == _ipnorm(PS4_IP)
+
+    for ip in PS4_IPS:
+        if _ipnorm(cli.ip) == _ipnorm(ip):
+            return True
+    return False
 
 
 def ndp(dpath):
@@ -696,36 +825,58 @@ def get_base_url(cli, *, bauth=False, swaphost=False):
 permission_fields = ('read', 'write', 'move', 'delete', 'get', 'upget', 'html', 'admin', 'dot')
 Permission = namedtuple('Permission', permission_fields, defaults=(False,) * len(permission_fields))
 
-class PermSet(object):
-    def __init__(self, *permissions):
-        self.permissions = permissions
+class Perms(object):
+    """
+    A list of Permissions required to do to something.
 
-    def check(self, requested_permission: Permission):
-        """Checks if provided permission matches this PermSet"""
+    Permissions are OR'd: if any Permission matches, the whole Perms matches
+    Little different semantics from what copyparty itself uses
+    - a tuple of rwmdgGha. bools:
+      - permset in copyparty
+      - Permission in this plugin
+    - a list of those tuples:
+      - permsets in copyparty
+      - Perms (actually Perms.permissions) in this plugin
+    """
+    def __init__(self, *permissions, **kwargs):
+        if kwargs:
+            self.permissions = [Permission(**kwargs)]
+        else:
+            self.permissions = permissions
+
+    def check(self, existing_permission: Permission):
+        """
+        Checks if provided permission matches requirements of this Perms
+        Similar to what's happenning in copyparty's VFS._ls() regarding permission checks
+        """
         for required_permission in self.permissions:
-            for required, existing in zip(required_permission, requested_permission):
+            for required, existing in zip(required_permission, existing_permission):
                 # found mismatching option in currently checked required permission
                 if required and not existing: break
             else:
-                # no mismatching options at least for one permission in this PermSet
+                # no mismatching options for currently tested Permission of this Perms
+                # means this specific Permission matched and no need to check others
                 return True
+        # note: empty Perms means forbid anything
+        # to allow everything just put a single empty (all-false) Permission inside
         return False
 
     def can_access(self, uname, vn, rem: Path | str = ''):
-        """Checks if specified user can access specified path in specified VFS"""
+        """
+        Checks if user 'uname' has atleast 'self' access level for path 'rem' inside volume 'vn'
+        """
         existing_permission = vn.can_access(str(rem), uname=uname)
         return self.check(existing_permission)
 
 
 # any of r/g/G/h is fine
-ACCESS_PERMISSIONS = PermSet(
+ACCESS_PERMISSIONS = Perms(
     Permission(read=True),
     Permission(get=True),
     Permission(upget=True),
     Permission(html=True),
 )
-SEND_PERMISSIONS = PermSet(Permission(read=True))
-YOLO_PERMISSIONS = PermSet(Permission())
+YOLO_PERMISSIONS = Perms(Permission())
 
 ###### /Common utils ######
 

@@ -1,31 +1,35 @@
 addEventListener("DOMContentLoaded", async function() {
-    ////// consts or smth {
+    ////// consts or smth; global values mb {
     const EXTS = new Set(['.pkg', '.elf', '.bin']);
+    let PKGFILES;
     ////// }
 
 
-    ////// initial setup: file list {
-    // set 'send' buttons on initial page load
-    let PKGFILES = getPkgFiles();
-    for (const f of PKGFILES) {
-        updateLead(f, 'send');
+    //// initial setup: file list {
+    function initPage() {
+        const pkgfiles = getPkgFiles();
+        // const inShare = have_shr && get_evpath().startsWith(SR + have_shr)
+        const leadText = in_shr ? null : 'send';
+        PKGFILES = in_shr ? [] : pkgfiles;
+        for (const f of pkgfiles) {
+            updateLead(f, leadText);
+        }
     }
+
+    // set 'send' buttons on initial page load
+    initPage();
+
     // hook into gentab to set up 'send' buttons during navigation
     const origgentab = treectl.gentab;
     treectl.gentab = function(top, res) {
         const ret = origgentab(top, res);
-        PKGFILES = getPkgFiles();
-        console.log('gentab called');
-        console.debug(PKGFILES);
-        for (const f of PKGFILES) {
-            updateLead(f, 'send');
-        }
+        initPage();
         return ret;
     }
     ////// }
 
 
-    ////// file grid: right click menu {
+    ////// right click menu {
     let mItem = document.createElement('a');
     mItem.id = "rfpkgi";
     mItem.textContent = 'send';
@@ -113,6 +117,12 @@ addEventListener("DOMContentLoaded", async function() {
         if (!cell) {  // switched to another folder
             return;
         }
+        if (toState === null) {
+            // remove that css-added pseudo-element 'install'
+            // used in shares
+            cell.firstElementChild?.classList.add('fpkg-handled');
+            return;
+        }
 
         const link = document.createElement('a');
         link.setAttribute('href', '#');
@@ -169,7 +179,7 @@ addEventListener("DOMContentLoaded", async function() {
         // probably yes
         // but another option is to test each level
         // or to send volumes info from the server initially
-        let url = SR + '/__fpkgtb/sender' + file.href;
+        let url = SR + '/__fpkgv/sender' + file.href;
         const name = file.name;
         const ret = {success: false, message: '', file};
         try {
@@ -256,22 +266,15 @@ addEventListener("DOMContentLoaded", async function() {
 
 
     ////// util {
-    function getPkgFiles(selected) {
+    // yeah, now it's part of initPage(), but I prefer to keep it here in 'util' anyway
+    function getPkgFiles() {
         const ret = [];
-        
-        const evpath = get_evpath().slice(SR.length);
-        if (have_shr && evpath.startsWith(have_shr)) {
-            return ret;
-        }
         const lsc = treectl.lsc.files.filter(f => EXTS.has('.' + f.ext.toLowerCase()));
-        if (!lsc.length) {
-            return ret;
-        }
-
+        if (!lsc.length) return ret;
         const lsmsel = msel.getall().filter(f => !f.isd && EXTS.has(f.vp.slice(-4).toLowerCase()));
-        
+        const evpath = get_evpath().slice(SR.length);
         for (const f of lsc) {
-            const [nameUri, query] = f.href.split('?');
+            const nameUri = f.href.split('?')[0];
             const href = evpath + nameUri;
             const mselfile = lsmsel.find(m => m.vp.slice(SR.length) == href);
             ret.push({

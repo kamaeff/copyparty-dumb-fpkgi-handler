@@ -6,6 +6,15 @@ Copyparty on404 handler enabling your copyparty instance to work as an FPKGi ser
 Starting from 2026-08-18 the repo is under maintenance. Big update is coming, but files in the master branch may be broken during that stage.
 If you need a working version, just grab it from the changelog below.
 
+
+#### Run dependencies
+Dependencies are optional:
+- Pillow and/or ffmpeg and/or pyvips – for thumbnails in copyparty web ui
+- Mutagen and/or ffprobe – for metadata extraction
+
+Pillow and mutagen are faster and safer than ffmpeg, but provide little less capabilities.
+IMO easiest way to make sure everything works is to use copyparty docker images.
+
 #### Build requirements
 - x86_64 machine
 - gcc
