@@ -1,4 +1,4 @@
-x-volumes:
+services:
   copyparty:
     image: copyparty/ac:latest
     container_name: copyparty
