@@ -19,9 +19,7 @@ import struct
 
 
 # TODO: DON'T FORGET HOW FILEKEYS ARE HANDLED BEFORE I WRITE IT DOWN
-# TODO: RENAME EVERYTHING TB -> V
-# TODO: TEST DEMO RUN (also with no deps e.g. on clean alpine)
-# TODO: RETEST WITH ipu/ipr FOR PS4 IP
+# TODO: retest demo run?
 # TODO: SHARE CACHE BETWEEN USERS BY ABSPATH: DON'T OPEN AND READ A FILE IF ITS DATA ALREADY CACHED
 # TODO: allow multiple consoles in sender web ui with separate permission rules for each
 
