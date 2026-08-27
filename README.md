@@ -305,6 +305,15 @@ to build, run:
 make
 ```
 
+My laptop is not x86_64, so I edit code locally and for building use [this](https://github.com/kamaeff/home-server/blob/c4b088498b3e17e62e845f318ac415d00cb6e31a/build-server/dockerfile) as my remote build machine, and a `remote` target in [Makefile](./Makefile). You can do the same.
+
+### Future ideas
+- better FPKGi server cache – don't read fpkg file content if its metadata is already cached for another user; also make cache TTL configurable
+- learn how chiaki wakes up the console and put it into rest mode and reimplement it here
+- better metadata parsing (e.g. look for keywords like `DYNAMICTHEME` in content id) – for tagging and better FPKGi categorization
+- allow multiple send targets (e.g. for single user with multiple consoles)
+- fix theme files installation via sender
+- make `FPKGV_PS4_IP` optional and just show an error toast when `send` is clicked
 
 ### Changelog
 - [2026-08-27](https://github.com/kamaeff/fpkg-vault/tree/7da3b52deb4353da10cb1bc4ed44847c7fdda400)
