@@ -1,9 +1,11 @@
 # fpkg-vault
+[![justforfunnoreally.dev badge](https://img.shields.io/badge/justforfunnoreally-dev-9ff)](https://justforfunnoreally.dev)
+
 A set of plugins for [copyparty](https://github.com/9001/copyparty) for managing and installing playstation4 homebrew apps and games (`.pkg`) and payloads(`.bin`, `.elf`).
 
 Watch a [showcase video on youtube](https://youtu.be/5eBbjtoWfsk) or play around with [demo server](https://files.kamaeff.com/public/fpkg-demo/).
 
-**This plugin requires GoldHEN on your console running Payloader server**
+**This plugin requires GoldHEN on your console running Payloader server**  
 To enable payloader server:
 - go to GoldHEN menu > Server Settings
 - tick `Enable Payloader Server`
@@ -102,7 +104,7 @@ While copyparty can be configured with cli args and config files, fpkg vault is 
 
 #### `FPKGV_PS4_IP`
 
-**Required**: yes
+**Required**: yes  
 **Default value**: empty
 
 Comma-separated list of LAN IP addresses of your PS4 consoles.
@@ -130,21 +132,21 @@ previously mentioned --ipu, set the environment variable FPKGV_RESTRICT_PS4_ACCE
 
 #### `FPKGV_RESTRICT_PS4_ACCESS`
 
-**Required**: no
+**Required**: no  
 **Default value**: empty
 
 Set to `true` to remove `FPKGV_PS4_IP` priveleged access and make it obey copyparty permission configuration.
 
 #### `FPKGV_SEND_USERS`
 
-**Required**: no
+**Required**: no  
 **Default value**: `*`
 
-Who can send payloads and packages to the console.
-Comma-separated list of copyparty usernames and group names allowed to send.
-Group names start with `@`.
-Prefix username or groupname with `-` to explicitly deny them send access.
-There is a special group in copyparty, `@acct`, which includes all authenticated users.
+Who can send payloads and packages to the console.  
+Comma-separated list of copyparty usernames and group names allowed to send.  
+Group names start with `@`.  
+Prefix username or groupname with `-` to explicitly deny them send access.  
+There is a special group in copyparty, `@acct`, which includes all authenticated users.  
 Use `*` to allow anyone to send packages.
 Examples:
 - `FPKGV_SEND_USERS='*'` – anyone allowed to send packages (default)
@@ -154,7 +156,7 @@ Examples:
 - `FPKGV_SEND_USERS='@home,-@kids'` – allow users from group 'home' to send packages, but exclude users from group 'kids'
 - `FPKGV_SEND_USERS='@acct,-@adults'` – kids revenge! allow any authenticated user to send packages, but exclude users from group 'adults'
 
-Having 'read' access to a package file is the baseline requirement to send it.
+Having 'read' access to a package file is the baseline requirement to send it.  
 You can make that requirement stricter by adding '#' followed by any combination of letters 'wmda' to require additional access levels:
 - w – also require 'write' access to the file to be able to send it
 - m – also require 'move' permission
@@ -164,7 +166,7 @@ You can make that requirement stricter by adding '#' followed by any combination
 examples:
 - `FPKGV_SEND_USERS='#wmd,*'` – anyone can send packages they have 'read' (baseline), 'write', 'move' and 'delete' access to at the same time
 - `FPKGV_SEND_USERS='#wmd,#wa,*'` – require either 'read,write,move,delete' or 'read,write,admin' permission level
-– `FPKGV_SEND_USERS='#wa,@acct,-jane'` – any authenticated user (except jane) can send a package if they have at the same time 'read' (baseline), 'write' and 'admin' access to it
+- `FPKGV_SEND_USERS='#wa,@acct,-jane'` – any authenticated user (except jane) can send a package if they have at the same time 'read' (baseline), 'write' and 'admin' access to it
 
 note that 'deny' rules always take precedence, so if you have `@home,-@kids,alex` and alex is in group 'kids', then alex will not be able to send packages because he is excluded by '-@kids' rule
 
@@ -173,17 +175,17 @@ note that 'deny' rules always take precedence, so if you have `@home,-@kids,alex
 **Required**: no
 **Default value**: empty
 
-LAN address of your copyparty instance.
-When you 'send PKG' to the playstation, you actually send a tiny payload.
-That payload tells the PS4 where to grab an actual PKG file from.
-If you specify the `FPKGV_CP_HOST` then the payload will contain links to that host.
+LAN address of your copyparty instance.  
+When you 'send PKG' to the playstation, you actually send a tiny payload.  
+That payload tells the PS4 where to grab an actual PKG file from.  
+If you specify the `FPKGV_CP_HOST` then the payload will contain links to that host.  
 Otherwise the host copyparty is accessed by (e.g. address in your browser address line) will be used.
 
 useful in cases:
-- you access copyparty externally (e.g. https://party.mycool.name served via cloudflare tunnels)
-  and asking the PS4 to download packages over the internet is inefficient;
-  in that case you can set FPKGV_CP_HOST='http://192.168.1.227:3923'
-  and PS4 will go to local address http://192.168.1.227:3923 instead of external https://party.mycool.name
+- you access copyparty externally (e.g. https://party.mycool.name served via cloudflare tunnels)  
+  and asking the PS4 to download packages over the internet is inefficient;  
+  in that case you can set FPKGV_CP_HOST='http://192.168.1.227:3923'  
+  and PS4 will go to local address http://192.168.1.227:3923 instead of external https://party.mycool.name  
 - you run copyparty on your main computer and access it with 'http://127.0.0.1:3923'
   in that case sending payloads with that host will lead to that PS4 can't download anything
   so you better set `FPKGV_CP_HOST` to the copyparty's LAN address
@@ -192,7 +194,7 @@ if you only access copyparty by LAN address then FPKGV_CP_HOST is optional
 
 ### FPKGi server
 
-fpkg vault serves json files consumable by ItsJokerZz's [FPKGi app](https://github.com/ItsJokerZz/FPKGi).
+fpkg vault serves json files consumable by ItsJokerZz's [FPKGi app](https://github.com/ItsJokerZz/FPKGi).  
 It recursively scans each volume and its subvolumes and creates special endpoints for each volume:
 - `<volume url>/__fpkgv/all.json` contains all found PKG files
 - `<volume url>/__fpkgv/PS2.json` – PKG files with PS2-like `TITLE_ID`s
@@ -202,9 +204,9 @@ It recursively scans each volume and its subvolumes and creates special endpoint
 - `<volume url>/__fpkgv/DLC.json` – PKG files with metadata saying its a DLC package
 - `<volume url>/__fpkgv/homebrew.json` – used if no other category could be determined by package metadata
 
-in the most basic setup you just run a single `/` volume
-and if your copyparty instance address is `http://192.168.1.227:3923`
-then these json endpoints are accessible as `http://192.168.1.227:3923/__fpkgv/all.json` and so on.
+in the most basic case you just run a single `/` volume
+and if your copyparty instance address is `http://192.168.1.227:3923`  
+then these json endpoints are accessible as `http://192.168.1.227:3923/__fpkgv/all.json` and so on.  
 
 In this case `CONTENT_URLS` section of your FPKGi config may look like this:
 ```json
@@ -226,7 +228,7 @@ In this case `CONTENT_URLS` section of your FPKGi config may look like this:
 
 
 if you want to manually manage these categories, you can create different copyparty
-volumes for each of them. And use each volume's `all.json` endpoint in FPKGi config.
+volumes for each of them. And use each volume's `all.json` endpoint in FPKGi config.  
 For example, volumes section in copyparty config:
 ```yaml
 [/]
