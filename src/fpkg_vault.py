@@ -355,7 +355,12 @@ def handle_cover(cli, vn, rem):
     if (not can_access or not is_pkg):
         return ''
 
-    with PkgFile(vn.canonical(rem)) as pkg:
+    abspath = get_abspath(vn, rem)
+    if not abspath:
+        cli.log(f'trying to get pkg cover for not a file:\n\t\t{vpath=!r}\n\t\t{abspath=!r}')
+        return ''
+
+    with PkgFile(abspath) as pkg:
         image = pkg.extract_cover_image()
 
     if image is None:
@@ -548,8 +553,12 @@ def handle_download(cli, vn, rem):
     """
     if not is_ps4(cli) or not rem.lower().endswith('.pkg'):
         return ''
-    cli.tx_file('oh_g', vn.canonical(rem))
-    return 'false'
+    abspath = get_abspath(vn, rem)
+    if not abspath:
+        cli.log(f'trying to download not a file:\n\t\t{vpath=!r}\n\t\t{abspath=!r}')
+        return ''
+    cli.tx_file('oh_g', abspath)
+    return 'true'
 
 ###### /Special download path ######
 
@@ -591,8 +600,6 @@ def get_all_packages(cli, vn):
         if vn.shr_src is None and vp.startswith(vn.vpath) and perms.can_access(cli.uname, vfs)
     }
     for vp2, vn2 in vols.items():
-        print('\n\n')
-        print(f'VFS {vp2=}')
         for vn3, rem3, _rel, fsroot, files, _rdirs, _vvirt in vn2.walk(
             '', '', [], cli.uname, perms.permissions, 0, False, False, False
         ):
@@ -833,6 +840,15 @@ def get_base_url(cli, *, bauth=False, swaphost=False):
         basic_auth = f'{cli.uname}:{cli.pw}@'
     
     return f"{protocol}://{basic_auth}{host}{cli.args.SRS}"
+
+
+def get_abspath(vn, rem, should_be_file=True) -> str:
+    vpath = ndp(vn.vpath) + nfp(rem)
+    vn, rem = vn.get(vpath, '*', False, False, False, False, False, None)
+    abspath = vn.canonical(rem)
+    if should_be_file and not os.path.isfile(abspath):
+        return None
+    return abspath
 
 
 permission_fields = ('read', 'write', 'move', 'delete', 'get', 'upget', 'html', 'admin', 'dot')

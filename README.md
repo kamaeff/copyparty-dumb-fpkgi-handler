@@ -314,6 +314,8 @@ My laptop is not x86_64, so I edit code locally and for building use [this](http
 - allow multiple send targets (e.g. for single user with multiple consoles)
 - fix theme files installation via sender
 - make `FPKGV_PS4_IP` optional and just show an error toast when `send` is clicked
+- add support for different elf/bin loaders
+- track PKG download status/progress remotely
 
 ### Changelog
 - [2026-08-27](https://github.com/kamaeff/fpkg-vault/tree/7da3b52deb4353da10cb1bc4ed44847c7fdda400)
