@@ -312,10 +312,19 @@ My laptop is not x86_64, so I edit code locally and for building use [this](http
 - learn how chiaki wakes up the console and put it into rest mode and reimplement it here
 - better metadata parsing (e.g. look for keywords like `DYNAMICTHEME` in content id) – for tagging and better FPKGi categorization
 - allow multiple send targets (e.g. for single user with multiple consoles)
-- fix theme files installation via sender
+- fix theme files installation via sender (possible reason: sceBgft errors for files smaller than 1 MB and requires them to be first downloaded; FPKGi handles it greatly; maybe sending fake package size would just work?)
 - make `FPKGV_PS4_IP` optional and just show an error toast when `send` is clicked
 - add support for different elf/bin loaders
-- track PKG download status/progress remotely
+- track PKG download status/progress remotely (look at copyparty's control-panel page with current downloads)
+- separate front end page for running in PS4's web browser; maybe integrate some webkitty too
+
+
+### Notes
+
+Someone on reddit pointed out that ezRemote with WebDAV can provide similar BGFT instalation experience to what you have with FPKGi backfround downloads + fpkg-vault FPKGi server.  
+Just tick 'RPI' in ezRemote client app and keep 'disk cache' unchecked.  
+BTW copyparty supports WebDAV and can be used with ezRemote app too.
+
 
 ### Changelog
 - [2026-08-27](https://github.com/kamaeff/fpkg-vault/tree/7da3b52deb4353da10cb1bc4ed44847c7fdda400)
